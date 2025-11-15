@@ -7,7 +7,7 @@
         "day": "Sh",
         "fullName": "Laziz shaarov",
         "time": "09:00",
-        "step": "sched_day"
+        "current_homework_id": "6918bbd0b940b98017de9f10"
       }
     },
     {
@@ -22,8 +22,15 @@
       "id": "7357754115:7357754115",
       "data": {
         "phone": "+998932235123",
-        "answering_homework": true,
         "current_task": "Uyga vazifa"
+      }
+    },
+    {
+      "id": "7011669085:7011669085",
+      "data": {
+        "fullName": "Sabina",
+        "phone": "+998959826462",
+        "answering_homework": true
       }
     }
   ]
