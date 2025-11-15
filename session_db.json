@@ -5,7 +5,15 @@
       "data": {
         "phone": "+998949395123",
         "step": "sched_time",
-        "day": "Sh"
+        "day": "Se"
+      }
+    },
+    {
+      "id": "8230280470:8230280470",
+      "data": {
+        "phone": "+998333672601",
+        "answering_homework": true,
+        "current_task": "2x + 5 = 13"
       }
     }
   ]
