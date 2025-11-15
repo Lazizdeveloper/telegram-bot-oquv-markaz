@@ -23,6 +23,7 @@ db.once('open', () => console.log('MongoDB ulandi'));
 // === MODELLAR ===
 interface IUser extends Document {
   telegramId: number;
+  fullName: string; // Yangi maydon
   phone: string;
   address: string;
   role: 'student' | 'teacher';
@@ -32,6 +33,7 @@ interface IUser extends Document {
 
 const UserSchema = new Schema<IUser>({
   telegramId: { type: Number, required: true, unique: true },
+  fullName: { type: String, required: true }, // Yangi maydon
   phone: { type: String, required: true },
   address: { type: String, required: true },
   role: { type: String, default: 'student' },
@@ -219,12 +221,18 @@ const showMainMenu = async (ctx: any) => {
 // === RO'YXATDAN O'TISH ===
 bot.hears("Ro'yxatdan o'tish", async (ctx: any) => {
   if (await isRegistered(ctx)) return ctx.reply("Siz ro'yxatdan o'tgansiz! /profile");
-  ctx.session.step = 'reg_phone';
-  return ctx.reply("Telefon (+998901234567):");
+  ctx.session.step = 'reg_fullName';
+  return ctx.reply("Ism va familiyangiz:");
 });
 
 bot.on('text', async (ctx: any) => {
   if (!ctx.session?.step) return;
+
+  if (ctx.session.step === 'reg_fullName') {
+    ctx.session.fullName = ctx.message.text.trim();
+    ctx.session.step = 'reg_phone';
+    return ctx.reply("Telefon (+998901234567):");
+  }
 
   if (ctx.session.step === 'reg_phone') {
     if (!/^\+998\d{9}$/.test(ctx.message.text)) return ctx.reply("Noto'g'ri format! /start");
@@ -236,6 +244,7 @@ bot.on('text', async (ctx: any) => {
   if (ctx.session.step === 'reg_address') {
     await new User({
       telegramId: ctx.from.id,
+      fullName: ctx.session.fullName,
       phone: ctx.session.phone,
       address: ctx.message.text,
       role: isTeacher(ctx) ? 'teacher' : 'student'
@@ -272,6 +281,18 @@ bot.on('text', async (ctx: any) => {
       return ctx.reply("Yangilandi! /profile").then(() => showMainMenu(ctx));
     }
   }
+
+  // Jadval qo'shish
+  if (ctx.session.step === 'sched_time') {
+    ctx.session.time = ctx.message.text;
+    ctx.session.step = 'sched_group';
+    ctx.reply("Guruh (A-guruh):");
+  }
+  if (ctx.session.step === 'sched_group') {
+    await new Schedule({ day: ctx.session.day, time: ctx.session.time, group: ctx.message.text }).save();
+    delete ctx.session.step;
+    ctx.reply("Jadval qo'shildi! /schedule");
+  }
 });
 
 // === PROFIL ===
@@ -292,7 +313,7 @@ const showProfile = async (ctx: any) => {
 
   const msg = `
 *Profil*
-Ism: ${ctx.from.first_name}
+Ism: ${user.fullName}
 Telefon: ${user.phone}
 Manzil: ${user.address}
 
@@ -342,19 +363,6 @@ bot.action('add_schedule', async (ctx: any) => {
   });
 });
 
-bot.on('text', async (ctx: any) => {
-  if (ctx.session.step === 'sched_time') {
-    ctx.session.time = ctx.message.text;
-    ctx.session.step = 'sched_group';
-    ctx.reply("Guruh (A-guruh):");
-  }
-  if (ctx.session.step === 'sched_group') {
-    await new Schedule({ day: ctx.session.day, time: ctx.session.time, group: ctx.message.text }).save();
-    delete ctx.session.step;
-    ctx.reply("Jadval qo'shildi! /schedule");
-  }
-});
-
 // === VAZIFA ===
 const sendHomework = async (ctx: any) => {
   if (!isTeacher(ctx)) return ctx.reply("Faqat o'qituvchi!");
@@ -385,7 +393,11 @@ const showRating = async (ctx: any) => {
     { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } }
   ]);
 
-  const lines = top.map((t: any, i: number) => `${i+1}. ${t.user[0].phone} — ${t.count} kun`).join('\n');
+  const lines = top.map((t: any, i: number) => {
+    const user = t.user[0];
+    const name = user?.fullName || 'Noma\'lum';
+    return `${i + 1}. ${name} — ${t.count} kun`;
+  }).join('\n');
   ctx.reply(`Top reyting:\n${lines || "Reyting bo'sh"}`);
 };
 
@@ -422,7 +434,7 @@ To'lov qilgandan keyin o'qituvchi tasdiqlaydi.
 
 bot.action('payment_status', showPaymentStatus);
 
-// === TO'LOVLAR RO'YXATI (O'QITUVCHI) — TUZATILDI! ===
+// === TO'LOVLAR RO'YXATI (O'QITUVCHI) ===
 bot.action('payment_list', async (ctx: any) => {
   if (!isTeacher(ctx)) return ctx.reply("Faqat o'qituvchi!");
 
@@ -433,11 +445,11 @@ bot.action('payment_list', async (ctx: any) => {
   const unpaid = payments.filter(p => !p.paid);
 
   const paidList = paid.length > 0
-    ? paid.map(p => `${p.userId.phone} — ${p.amount.toLocaleString()} so'm`).join('\n')
+    ? paid.map(p => `${p.userId.fullName} — ${p.amount.toLocaleString()} so'm`).join('\n')
     : "Yo'q";
 
   const unpaidList = unpaid.length > 0
-    ? unpaid.map(p => `${p.userId.phone} — ${p.amount.toLocaleString()} so'm`).join('\n')
+    ? unpaid.map(p => `${p.userId.fullName} — ${p.amount.toLocaleString()} so'm`).join('\n')
     : "Yo'q";
 
   ctx.replyWithHTML(`
@@ -484,14 +496,14 @@ bot.action(/student_(.+)/, async (ctx: any) => {
   }
 
   ctx.replyWithHTML(`
-<b>${student.phone}</b>
+<b>${student.fullName}</b>
 Manzil: ${student.address}
 Bugun: ${status}
 To'lov: ${paid}
   `, Markup.inlineKeyboard(buttons));
 });
 
-// === TO'LOV TASDIQLASH — TUZATILDI! ===
+// === TO'LOV TASDIQLASH ===
 bot.action(/pay_confirm_(.+)/, async (ctx: any) => {
   if (!isTeacher(ctx)) return;
   const paymentId = ctx.match[1];
@@ -519,7 +531,7 @@ bot.action('list_students', async (ctx: any) => {
   if (students.length === 0) return ctx.reply("O'quvchi yo'q.");
 
   const buttons = students.map(s => [
-    Markup.button.callback(`${s.phone} — ${s.address}`, `student_${s._id}`)
+    Markup.button.callback(`${s.fullName} — ${s.address}`, `student_${s._id}`)
   ]);
   ctx.reply("O'quvchilar:", Markup.inlineKeyboard(buttons));
 });
@@ -575,7 +587,7 @@ setInterval(async () => {
 
 // === BOT ISHGA TUSHIRISH ===
 bot.launch();
-console.log('Bot ishga tushdi! Barcha xatolar tuzatildi!');
+console.log('Bot ishga tushdi! Ism-familiya qo\'shildi!');
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
