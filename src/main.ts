@@ -648,6 +648,12 @@ const showStudentStats = async (ctx: any) => {
 
 bot.action('student_stats', showStudentStats);
 
+// YANGI: O'QITUVCHI UCHUN REYTING
+bot.action('rating', async (ctx: any) => {
+  if (!isTeacher(ctx)) return ctx.reply("Faqat o'qituvchi!");
+  await showStudentStats(ctx);
+});
+
 // === O'QUVCHI DETAY (30 kun) ===
 bot.action(/student_detail_(.+)/, async (ctx: any) => {
   const studentId = ctx.match[1];
@@ -684,7 +690,7 @@ bot.action(/student_detail_(.+)/, async (ctx: any) => {
     `Vazifa: ${totalDone} bajarilgan, ${totalNotDone} bajarilmagan\n\n` +
     `<pre>${lines}</pre>`;
 
-  ctx.replyWithHTML(msg, { reply_markup: Markup.inlineKeyboard([[backButton('student_stats')]]).reply_markup });
+  ctx.replyWithHTML(msg, { reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu')]]).reply_markup });
 });
 
 // === VAZIFA KO'RISH (teacher) ===
