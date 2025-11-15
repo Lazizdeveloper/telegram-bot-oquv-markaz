@@ -6,7 +6,8 @@
         "phone": "+998949395123",
         "day": "Sh",
         "fullName": "Laziz shaarov",
-        "time": "09:00"
+        "time": "09:00",
+        "step": "sched_day"
       }
     },
     {
@@ -20,7 +21,9 @@
     {
       "id": "7357754115:7357754115",
       "data": {
-        "phone": "+998932235123"
+        "phone": "+998932235123",
+        "answering_homework": true,
+        "current_task": "Uyga vazifa"
       }
     }
   ]
