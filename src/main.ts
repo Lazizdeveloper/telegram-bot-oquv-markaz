@@ -572,7 +572,7 @@ bot.on('text', async (ctx: any) => {
     if (!/^\+998\d{9}$/.test(ctx.message.text)) return ctx.reply("Noto'g'ri format! /start");
     ctx.session.phone = ctx.message.text;
     ctx.session.step = 'reg_address';
-    return ctx.reply("Manzil:");
+    return ctx.reply("Manzil(Qishloq):");
   }
   if (ctx.session.step === 'reg_address') {
     await new User({
