@@ -164,9 +164,10 @@ setInterval(async () => {
     try {
       await bot.telegram.sendMessage(
         student.telegramId,
-        `To'lov muddatingiz (${today}-sana) yetib keldi!\n` +
-        `Summa: ${student.paymentAmount.toLocaleString()} so'm\n` +
-        `/payment — to'lov qilish\n/homework — vazifalarni ko'rish`
+        `*Bugun to'lov kuni!* (${today}-sana)\n` +
+        `Summa: *${student.paymentAmount.toLocaleString()} so'm*\n` +
+        `/payment — to'lov qilish\n/homework — vazifalarni ko'rish`,
+        { parse_mode: 'Markdown' }
       );
     } catch (e) {
       console.log(`Xabar yuborilmadi: ${student.fullName}`);
@@ -417,36 +418,58 @@ bot.on('text', async (ctx: any) => {
 
 // === RASMLAR ===
 bot.on('photo', async (ctx: any) => {
-  if (ctx.session?.step === 'waiting_for_receipt') {
+  // === CHEK YUBORISH (ZAMONAVIY) ===
+  if (ctx.session?.waitingForReceipt) {
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user) return ctx.reply("Foydalanuvchi topilmadi.");
+
     const currentMonth = moment().format('YYYY-MM');
     const payment = await Payment.findOne({ userId: user._id, month: currentMonth, paid: false });
     if (!payment) {
-      delete ctx.session.step;
-      return ctx.reply("To'lov allaqachon tasdiqlangan.");
+      delete ctx.session.waitingForReceipt;
+      return ctx.reply("Bu oy uchun to'lov topilmadi.");
     }
-    const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+
+    const fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+    const caption = `
+*YANGI CHEK*
+
+O‘quvchi: *${user.fullName}*
+Telefon: \`${user.phone}\`
+Oy: *${moment().format('MMMM YYYY')}*
+Summa: *${payment.amount.toLocaleString()} so'm*
+Vaqt: \`${moment().format('DD.MM.YYYY HH:mm')}\`
+`.trim();
+
     try {
-      await bot.telegram.sendPhoto(TEACHER_ID, photoId, { caption: `Chek: ${user.fullName}\n${user.phone}` });
-      await bot.telegram.sendMessage(
-        TEACHER_ID,
-        `Onlayn to'lov tasdiqlash:\nO'quvchi: ${user.fullName}\nSumma: ${user.paymentAmount.toLocaleString()} so'm`,
-        {
-          reply_markup: Markup.inlineKeyboard([
-            [Markup.button.callback("Tasdiqlash", `pay_confirm_${payment._id}`)],
-            [Markup.button.callback("Rad etish", `pay_reject_${payment._id}`)]
-          ]).reply_markup
-        }
-      );
-      ctx.reply("Chek yuborildi! O'qituvchi tasdiqlashini kuting.");
+      await bot.telegram.sendPhoto(TEACHER_ID, fileId, {
+        caption,
+        parse_mode: 'Markdown',
+        reply_markup: Markup.inlineKeyboard([
+          [
+            Markup.button.callback("Tasdiqlash", `confirm_receipt_${payment._id}`),
+            Markup.button.callback("Rad etish", `reject_receipt_${payment._id}`)
+          ]
+        ]).reply_markup
+      });
+
+      await ctx.replyWithHTML(`
+<b>Chek muvaffaqiyatli yuborildi!</b>
+
+O‘qituvchi tekshirib, tasdiqlaydi.
+Sabr qiling...
+      `.trim(), {
+        reply_markup: Markup.inlineKeyboard([[backButton('payment_status')]]).reply_markup
+      });
     } catch (e) {
-      ctx.reply("Xatolik yuz berdi.");
+      await ctx.reply("Xatolik yuz berdi. Qayta urining.");
     }
-    delete ctx.session.step;
+
+    delete ctx.session.waitingForReceipt;
     return;
   }
 
+  // === VAZIFA RASMI (teacher) ===
   if (ctx.session?.step === 'send_homework_content' && isTeacher(ctx)) {
     const caption = ctx.message.caption || "Uyga vazifa (rasm).";
     const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
@@ -464,6 +487,7 @@ bot.on('photo', async (ctx: any) => {
     return ctx.reply("Rasmli vazifa yuborildi!");
   }
 
+  // === VAZIFA JAVOBI (student) ===
   if (ctx.session?.answering_homework) {
     const user = await User.findOne({ telegramId: ctx.from.id });
     const today = moment().format('YYYY-MM-DD');
@@ -479,79 +503,172 @@ bot.on('photo', async (ctx: any) => {
   }
 });
 
-// === TO'LOV (Onlayn / Ofline) ===
+// === TO'LOV (ZAMONAVIY) ===
 const showPaymentStatus = async (ctx: any) => {
   const user = await User.findOne({ telegramId: ctx.from.id });
   if (!user) return ctx.reply("Ro'yxatdan o'tmadingiz.");
+
   const currentMonth = moment().format('YYYY-MM');
-  const payment = await Payment.findOne({ userId: user._id, month: currentMonth });
+  let payment = await Payment.findOne({ userId: user._id, month: currentMonth });
   if (!payment) {
-    return ctx.reply("Bu oy uchun to'lov hali yaratilmagan.", { reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu')]]).reply_markup });
+    payment = await new Payment({ userId: user._id, month: currentMonth, amount: user.paymentAmount }).save();
   }
-  const status = payment.paid ? "To'landi" : "To'lanmagan";
-  const method = payment.method ? `(${payment.method === 'receipt' ? 'Onlayn (Chek)' : 'Ofline'})` : "";
-  const msg = `*To'lov (${moment().format('MMMM YYYY')})*\nHolati: ${status} ${method}\nSana: ${user.paymentDay}-kuni\nSumma: ${user.paymentAmount.toLocaleString()} so'm\n\nKarta: \`${PAYMENT_CARD_NUMBER}\`\nIsm: ${PAYMENT_CARD_NAME}`;
+
+  const status = payment.paid 
+    ? `To‘landi ${payment.method === 'receipt' ? '(Chek)' : '(Naqd)'}` 
+    : 'To‘lanmagan';
+
+  const msg = `
+*To‘lov haqida ma'lumot*
+
+Oy: *${moment().format('MMMM YYYY')}*
+Summa: *${payment.amount.toLocaleString()} so'm*
+Muddat: *${user.paymentDay}-kuni*
+Holati: *${status}*
+
+Karta: \`${PAYMENT_CARD_NUMBER}\`
+Ism: *${PAYMENT_CARD_NAME}*
+`.trim();
 
   const buttons: any[][] = [];
   if (!payment.paid) {
-    buttons.push([Markup.button.callback("Onlayn to'lov", 'send_receipt')]);
-    buttons.push([Markup.button.callback("Ofline to'lov", 'offline_payment')]);
+    buttons.push([Markup.button.callback("Chek yuborish", 'send_receipt')]);
+    buttons.push([Markup.button.callback("Naqd to‘lov so‘rash", 'offline_payment')]);
   }
+  buttons.push([Markup.button.callback("To‘lov tarixi", 'payment_history')]);
   buttons.push([backButton('back_to_menu')]);
 
-  ctx.replyWithMarkdownV2(msg.replace(/[_*[\]()~>#+=|{}.!-]/g, '\\$&'), { reply_markup: Markup.inlineKeyboard(buttons).reply_markup });
+  ctx.replyWithMarkdownV2(
+    msg.replace(/[_*[\]()~>#+=|{}.!-]/g, '\\$&'),
+    { reply_markup: Markup.inlineKeyboard(buttons).reply_markup }
+  );
 };
 
 bot.action('payment_status', showPaymentStatus);
 
-bot.action('send_receipt', (ctx: any) => {
-  ctx.session.step = 'waiting_for_receipt';
-  ctx.reply("To'lov chekini rasm sifatida yuboring:");
+// === CHEK YUBORISH ===
+bot.action('send_receipt', async (ctx: any) => {
+  await ctx.replyWithHTML(`
+<b>Chek yuborish bo‘yicha qo‘llanma</b>
+
+1. Kvitansiyani <u>yuqori sifatli rasm</u> qilib oling
+2. Quyidagi ma'lumotlarni ko‘rsating:
+   • <code>${PAYMENT_CARD_NUMBER}</code>
+   • <code>${PAYMENT_CARD_NAME}</code>
+   • Summa: <b>${(await User.findOne({ telegramId: ctx.from.id }))?.paymentAmount.toLocaleString()} so‘m</b>
+
+<i>Foydalanuvchi: ${ctx.from.first_name}</i>
+  `.trim(), {
+    reply_markup: Markup.inlineKeyboard([[Markup.button.callback("Bekor qilish", 'payment_status')]]).reply_markup
+  });
+
+  ctx.session.waitingForReceipt = true;
+  ctx.answerCbQuery();
 });
 
+// === NAQD TO‘LOV SO‘RASH ===
 bot.action('offline_payment', async (ctx: any) => {
   const user = await User.findOne({ telegramId: ctx.from.id });
   if (!user) return ctx.reply("Foydalanuvchi topilmadi.");
+
   const currentMonth = moment().format('YYYY-MM');
   const payment = await Payment.findOne({ userId: user._id, month: currentMonth, paid: false });
-  if (!payment) return ctx.reply("To'lov allaqachon mavjud.");
+  if (!payment) return ctx.reply("To‘lov topilmadi.");
+
+  await bot.telegram.sendMessage(TEACHER_ID, `
+*NAQD TO‘LOV SO‘ROVI*
+
+Ism: *${user.fullName}*
+Telefon: \`${user.phone}\`
+Oy: *${moment().format('MMMM YYYY')}*
+Summa: *${payment.amount.toLocaleString()} so'm*
+  `.trim(), {
+    parse_mode: 'Markdown',
+    reply_markup: Markup.inlineKeyboard([
+      [
+        Markup.button.callback("Tasdiqlash", `confirm_offline_${payment._id}`),
+        Markup.button.callback("Rad etish", `reject_receipt_${payment._id}`)
+      ]
+    ]).reply_markup
+  });
+
+  await ctx.replyWithHTML(`<b>Naqd toʻlov soʻrovi yuborildi!</b>\nOʻqituvchi tasdiqlashini kuting.`);
+});
+
+// === TASDIQLASH ===
+bot.action(/confirm_(receipt|offline)_(.+)/, async (ctx: any) => {
+  if (!isTeacher(ctx)) return;
+
+  const paymentId = ctx.match[2];
+  const payment = await Payment.findById(paymentId).populate<{ userId: IUser }>('userId');
+  if (!payment || payment.paid) return;
+
+  payment.paid = true;
+  payment.paidAt = new Date();
+  payment.method = ctx.match[1] === 'receipt' ? 'receipt' : 'offline';
+  await payment.save();
+
   try {
-    await bot.telegram.sendMessage(
-      TEACHER_ID,
-      `Ofline to'lov so'rovi:\nO'quvchi: ${user.fullName}\nTelefon: ${user.phone}\nSumma: ${user.paymentAmount.toLocaleString()} so'm`,
-      {
-        reply_markup: Markup.inlineKeyboard([
-          [Markup.button.callback("Tasdiqlash", `pay_confirm_${payment._id}`)],
-          [Markup.button.callback("Rad etish", `pay_reject_${payment._id}`)]
-        ]).reply_markup
-      }
-    );
-    ctx.reply("Ofline to'lov so'rovi o'qituvchiga yuborildi!");
-  } catch (e) {
-    ctx.reply("Xatolik yuz berdi.");
-  }
+    await bot.telegram.sendMessage(payment.userId.telegramId, `
+*TO‘LOV TASDIQLANDI!*
+
+Summa: *${payment.amount.toLocaleString()} so'm*
+Sana: \`${moment(payment.paidAt).format('DD.MM.YYYY HH:mm')}\`
+Usul: *${payment.method === 'receipt' ? 'Chek' : 'Naqd'}*
+
+Rahmat!
+    `.trim(), { parse_mode: 'Markdown' });
+  } catch (e) {}
+
+  await ctx.reply("To‘lov tasdiqlandi!", { reply_markup: Markup.inlineKeyboard([[backButton('payment_list')]]).reply_markup });
+  ctx.answerCbQuery("Tasdiqlandi");
+});
+
+// === RAD ETISH ===
+bot.action(/reject_receipt_(.+)/, async (ctx: any) => {
+  if (!isTeacher(ctx)) return;
+
+  const paymentId = ctx.match[1];
+  const payment = await Payment.findById(paymentId).populate<{ userId: IUser }>('userId');
+  if (!payment || payment.paid) return;
+
+  try {
+    await bot.telegram.sendMessage(payment.userId.telegramId, `
+*TO‘LOV RAD ETILDI*
+
+Sabab: Noto‘g‘ri chek yoki ma'lumot
+Iltimos, qayta yuboring: /payment
+    `.trim(), { parse_mode: 'Markdown' });
+  } catch (e) {}
+
+  await ctx.reply("To‘lov rad etildi!", { reply_markup: Markup.inlineKeyboard([[backButton('payment_list')]]).reply_markup });
+  ctx.answerCbQuery("Rad etildi");
 });
 
 // === TO'LOV TARIXI ===
 const showPaymentHistory = async (ctx: any) => {
   const user = await User.findOne({ telegramId: ctx.from.id });
   if (!user) return ctx.reply("Ro'yxatdan o'tmadingiz.");
+
   const payments = await Payment.find({ userId: user._id, paid: true }).sort({ paidAt: -1 });
   if (payments.length === 0) {
-    return ctx.reply("Siz hali to'lov qilmagansiz.", { reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu')]]).reply_markup });
+    return ctx.reply("Siz hali to‘lov qilmagansiz.", { reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu')]]).reply_markup });
   }
+
   const lines = payments.map(p => {
-    const date = p.paidAt ? moment(p.paidAt).format('YYYY-MM-DD') : 'Noma\'lum';
-    const method = p.method === 'receipt' ? 'Onlayn' : 'Ofline';
-    const month = moment(p.month, 'YYYY-MM').format('MMMM YYYY');
-    return `${date} | ${month} | ${p.amount.toLocaleString()} so'm | ${method}`;
+    const date = moment(p.paidAt).format('DD.MM.YYYY');
+    const method = p.method === 'receipt' ? 'Chek' : 'Naqd';
+    return `${date} | ${p.amount.toLocaleString()} so'm | ${method}`;
   }).join('\n');
-  ctx.reply(`To'lov tarixi:\n\n${lines}`, { reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu')]]).reply_markup });
+
+  ctx.replyWithHTML(`<b>To‘lov tarixi</b>\n\n<pre>${lines}</pre>`, {
+    reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu')]]).reply_markup
+  });
 };
 
 bot.action('payment_history', showPaymentHistory);
 
-// === PROFIL ===
+// === QOLGAN QISMLAR (O'ZGARMAGAN) ===
 const showProfile = async (ctx: any) => {
   const user = await User.findOne({ telegramId: ctx.from.id });
   if (!user) return ctx.reply("Ro'yxatdan o'ting: /start");
@@ -578,7 +695,6 @@ bot.action('edit_profile', (ctx: any) => {
   ctx.reply("Yangi telefon:");
 });
 
-// === JADVAL ===
 const viewSchedule = async (ctx: any) => {
   const schedules = await Schedule.find();
   if (schedules.length === 0) return ctx.reply("Jadval yo'q.");
@@ -608,7 +724,6 @@ bot.action('add_schedule', async (ctx: any) => {
   });
 });
 
-// === VAZIFA JAVOBI ===
 const submitHomework = (ctx: any) => {
   ctx.session.answering_homework = true;
   ctx.reply("Javobingizni yozing yoki rasm yuboring:", {
@@ -618,7 +733,6 @@ const submitHomework = (ctx: any) => {
 
 bot.action('submit_homework', submitHomework);
 
-// === TEKSHIRILMAGAN VAZIFALAR (teacher) ===
 const listUncheckedHomework = async (ctx: any) => {
   const homeworks = await Homework.find({ checked: false }).populate<{ studentId: IUser }>('studentId');
   if (homeworks.length === 0) {
@@ -635,7 +749,6 @@ bot.action('check_homework', async (ctx: any) => {
   await listUncheckedHomework(ctx);
 });
 
-// === O'QUVCHILAR STATISTIKASI (student & teacher) ===
 const showStudentStats = async (ctx: any) => {
   const students = await User.find({ role: 'student' }).sort({ fullName: 1 });
   if (students.length === 0) return ctx.reply("O'quvchi yo'q.");
@@ -647,14 +760,11 @@ const showStudentStats = async (ctx: any) => {
 };
 
 bot.action('student_stats', showStudentStats);
-
-// YANGI: O'QITUVCHI UCHUN REYTING
 bot.action('rating', async (ctx: any) => {
   if (!isTeacher(ctx)) return ctx.reply("Faqat o'qituvchi!");
   await showStudentStats(ctx);
 });
 
-// === O'QUVCHI DETAY (30 kun) ===
 bot.action(/student_detail_(.+)/, async (ctx: any) => {
   const studentId = ctx.match[1];
   const student = await User.findById(studentId);
@@ -693,7 +803,6 @@ bot.action(/student_detail_(.+)/, async (ctx: any) => {
   ctx.replyWithHTML(msg, { reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu')]]).reply_markup });
 });
 
-// === VAZIFA KO'RISH (teacher) ===
 bot.action(/view_hw_(.+)/, async (ctx: any) => {
   if (!isTeacher(ctx)) return ctx.reply("Faqat o'qituvchi!");
 
@@ -728,7 +837,6 @@ bot.action(/grade_hw_(.+)/, async (ctx: any) => {
   ctx.reply("Bahoni kiriting (1-5):", Markup.inlineKeyboard([[backButton(`view_hw_${hwId}`)]]));
 });
 
-// === O'QITUVCHI PANELI ===
 bot.action('payment_list', async (ctx: any) => {
   if (!isTeacher(ctx)) return ctx.reply("Faqat o'qituvchi!");
   const currentMonth = moment().format('YYYY-MM');
@@ -750,7 +858,6 @@ bot.action('list_students', async (ctx: any) => {
   ctx.reply("O'quvchilar:", { reply_markup: Markup.inlineKeyboard([...buttons, [backButton('back_to_menu')]]).reply_markup });
 });
 
-// === O'QUVCHI KARTASI (faqat student_123 formatida) ===
 bot.action(/^student_[^_]+$/, async (ctx: any) => {
   const studentId = ctx.match[0].split('_')[1];
   const student = await User.findById(studentId);
@@ -796,7 +903,6 @@ bot.action(/^student_[^_]+$/, async (ctx: any) => {
   ctx.answerCbQuery();
 });
 
-// === TO'LOV YARATISH ===
 bot.action(/^create_payment_(.+)/, async (ctx: any) => {
   if (!isTeacher(ctx)) return;
 
@@ -825,7 +931,6 @@ bot.action(/^create_payment_(.+)/, async (ctx: any) => {
   });
 });
 
-// === O'CHIRISH ===
 bot.action(/^delete_student_(.+)/, async (ctx: any) => {
   if (!isTeacher(ctx)) return;
 
@@ -850,7 +955,6 @@ bot.action(/^delete_student_(.+)/, async (ctx: any) => {
   ctx.answerCbQuery("O'quvchi o'chirildi!");
 });
 
-// === TO'LOV SANASI & SUMMASI ===
 bot.action(/^set_payment_day_(.+)/, async (ctx: any) => {
   if (!isTeacher(ctx)) return;
   const studentId = ctx.match[1];
@@ -870,32 +974,6 @@ bot.action(/^set_payment_amount_(.+)/, async (ctx: any) => {
   ctx.editMessageText("To'lov summasini kiriting:", {
     reply_markup: Markup.inlineKeyboard([[backButton(`student_${studentId}`)]]).reply_markup
   });
-  ctx.answerCbQuery();
-});
-
-// === TO'LOV TASDIQLASH / RAD ETISH ===
-bot.action(/pay_confirm_(.+)/, async (ctx: any) => {
-  if (!isTeacher(ctx)) return;
-  const paymentId = ctx.match[1];
-  const payment = await Payment.findById(paymentId).populate<{ userId: IUser }>('userId');
-  if (!payment || payment.paid) return;
-  await Payment.updateOne({ _id: paymentId }, { paid: true, paidAt: new Date(), method: payment.method || 'offline' });
-  try {
-    await bot.telegram.sendMessage(payment.userId.telegramId, `To'lovingiz tasdiqlandi!\nSumma: ${payment.amount.toLocaleString()} so'm`);
-  } catch (e) {}
-  ctx.reply("To'lov tasdiqlandi!", { reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu')]]).reply_markup });
-  ctx.answerCbQuery();
-});
-
-bot.action(/pay_reject_(.+)/, async (ctx: any) => {
-  if (!isTeacher(ctx)) return;
-  const paymentId = ctx.match[1];
-  const payment = await Payment.findById(paymentId).populate<{ userId: IUser }>('userId');
-  if (!payment || payment.paid) return;
-  try {
-    await bot.telegram.sendMessage(payment.userId.telegramId, `To'lovingiz rad etildi. Iltimos, qayta urinib ko'ring yoki o'qituvchi bilan bog'laning.`);
-  } catch (e) {}
-  ctx.reply("To'lov rad etildi!", { reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu')]]).reply_markup });
   ctx.answerCbQuery();
 });
 
