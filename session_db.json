@@ -4,7 +4,7 @@
       "id": "6186454238:6186454238",
       "data": {
         "phone": "+998949395123",
-        "day": "Sh",
+        "day": "Se",
         "fullName": "Laziz shaarov",
         "time": "09:00",
         "current_homework_id": "6918bbd0b940b98017de9f10"
@@ -13,9 +13,8 @@
     {
       "id": "8230280470:8230280470",
       "data": {
-        "phone": "+998333672601",
-        "answering_homework": true,
-        "current_task": "2x + 5 = 13"
+        "edit": true,
+        "step": "edit_phone"
       }
     },
     {
