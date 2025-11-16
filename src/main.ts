@@ -280,7 +280,7 @@ const showMainMenu = async (ctx: any) => {
       [Markup.button.callback("Jadval qo'shish", 'add_schedule')],
       [Markup.button.callback("Vazifa yuborish", 'manual_homework')],
       [Markup.button.callback("Tekshirilmagan vazifalar", 'check_homework')],
-      [Markup.button.callback("Dars boshlandi", 'lesson_started')],
+      [Markup.button.callback("Davomat qilish", 'take_attendance')],
       [Markup.button.callback("Reyting", 'rating')]
     ]));
   } else {
@@ -299,6 +299,258 @@ bot.action('manual_homework', async (ctx: any) => {
   if (!isTeacher(ctx)) return ctx.reply("Faqat o'qituvchi!");
   ctx.session.step = 'send_homework_content';
   ctx.reply("O'quvchilarga uyga vazifa yuboring (matn yoki rasm):");
+});
+
+// === DAVOMAT QILISH ===
+bot.action('take_attendance', async (ctx: any) => {
+  if (!isTeacher(ctx)) return ctx.reply("Faqat o'qituvchi!");
+  
+  const students = await User.find({ role: 'student' }).sort({ fullName: 1 });
+  if (students.length === 0) {
+    return ctx.reply("O'quvchilar topilmadi.", Markup.inlineKeyboard([[backButton('back_to_menu')]]));
+  }
+
+  const today = moment().format('YYYY-MM-DD');
+  
+  // Bugungi davomatni olish
+  const todayAttendance = await Attendance.find({ date: today }).populate<{ userId: IUser }>('userId');
+  const attendanceMap = new Map();
+  todayAttendance.forEach((att: any) => {
+    if (att.userId && att.userId._id) {
+      attendanceMap.set(att.userId._id.toString(), att.status);
+    }
+  });
+
+  // O'quvchilarni guruhlash (har bir xabarda 5 ta o'quvchi)
+  const studentChunks: IUser[][] = [];
+  for (let i = 0; i < students.length; i += 5) {
+    studentChunks.push(students.slice(i, i + 5));
+  }
+
+  // Har bir guruh uchun alohida xabar yuborish
+  for (let chunkIndex = 0; chunkIndex < studentChunks.length; chunkIndex++) {
+    const chunk = studentChunks[chunkIndex];
+    const buttons: any[] = [];
+    
+    for (const student of chunk) {
+      const studentId = (student as any)._id?.toString();
+      const currentStatus = attendanceMap.get(studentId) || 'not_marked';
+      let statusText = '';
+      
+      switch (currentStatus) {
+        case 'present':
+          statusText = '✅ Kelgan';
+          break;
+        case 'late':
+          statusText = '⏰ Kechikdi';
+          break;
+        case 'absent':
+          statusText = '❌ Kelmadi';
+          break;
+        default:
+          statusText = '📝 Belgilanmadi';
+      }
+      
+      buttons.push([
+        Markup.button.callback(
+          `${student.fullName} - ${statusText}`,
+          `attendance_student_${studentId}`
+        )
+      ]);
+    }
+
+    // Har bir xabarga "Keyingi" va "Oldingi" tugmalarini qo'shish
+    const navigationButtons: any[] = [];
+    if (chunkIndex > 0) {
+      navigationButtons.push(Markup.button.callback('⬅️ Oldingi', `attendance_page_${chunkIndex - 1}`));
+    }
+    if (chunkIndex < studentChunks.length - 1) {
+      navigationButtons.push(Markup.button.callback('Keyingi ➡️', `attendance_page_${chunkIndex + 1}`));
+    }
+    
+    if (navigationButtons.length > 0) {
+      buttons.push(navigationButtons);
+    }
+
+    buttons.push([backButton('back_to_menu')]);
+
+    const messageText = chunkIndex === 0 
+      ? `📊 *Davomat qilish - ${today}*\n\nQuyidagi o'quvchilarning davomatini belgilang:`
+      : `📊 *Davomat qilish - ${today}* (${chunkIndex + 1}/${studentChunks.length})`;
+
+    await ctx.replyWithMarkdown(
+      messageText,
+      { reply_markup: Markup.inlineKeyboard(buttons).reply_markup }
+    );
+  }
+
+  ctx.answerCbQuery();
+});
+
+// Davomat sahifalari uchun handler
+bot.action(/attendance_page_(.+)/, async (ctx: any) => {
+  if (!isTeacher(ctx)) return ctx.reply("Faqat o'qituvchi!");
+  
+  const page = parseInt(ctx.match[1]);
+  const students = await User.find({ role: 'student' }).sort({ fullName: 1 });
+  const studentChunks: IUser[][] = [];
+  
+  for (let i = 0; i < students.length; i += 5) {
+    studentChunks.push(students.slice(i, i + 5));
+  }
+
+  if (page < 0 || page >= studentChunks.length) {
+    return ctx.answerCbQuery("Noto'g'ri sahifa!");
+  }
+
+  const chunk = studentChunks[page];
+  const today = moment().format('YYYY-MM-DD');
+  const todayAttendance = await Attendance.find({ date: today }).populate<{ userId: IUser }>('userId');
+  const attendanceMap = new Map();
+  todayAttendance.forEach((att: any) => {
+    if (att.userId && att.userId._id) {
+      attendanceMap.set(att.userId._id.toString(), att.status);
+    }
+  });
+
+  const buttons: any[] = [];
+  
+  for (const student of chunk) {
+    const studentId = (student as any)._id?.toString();
+    const currentStatus = attendanceMap.get(studentId) || 'not_marked';
+    let statusText = '';
+    
+    switch (currentStatus) {
+      case 'present':
+        statusText = '✅ Kelgan';
+        break;
+      case 'late':
+        statusText = '⏰ Kechikdi';
+        break;
+      case 'absent':
+        statusText = '❌ Kelmadi';
+        break;
+      default:
+        statusText = '📝 Belgilanmadi';
+    }
+    
+    buttons.push([
+      Markup.button.callback(
+        `${student.fullName} - ${statusText}`,
+        `attendance_student_${studentId}`
+      )
+    ]);
+  }
+
+  const navigationButtons: any[] = [];
+  if (page > 0) {
+    navigationButtons.push(Markup.button.callback('⬅️ Oldingi', `attendance_page_${page - 1}`));
+  }
+  if (page < studentChunks.length - 1) {
+    navigationButtons.push(Markup.button.callback('Keyingi ➡️', `attendance_page_${page + 1}`));
+  }
+  
+  if (navigationButtons.length > 0) {
+    buttons.push(navigationButtons);
+  }
+
+  buttons.push([backButton('back_to_menu')]);
+
+  await ctx.editMessageText(
+    `📊 *Davomat qilish - ${today}* (${page + 1}/${studentChunks.length})`,
+    {
+      parse_mode: 'Markdown',
+      reply_markup: Markup.inlineKeyboard(buttons).reply_markup
+    }
+  );
+
+  ctx.answerCbQuery();
+});
+
+// Har bir o'quvchi uchun davomat belgilash
+bot.action(/attendance_student_(.+)/, async (ctx: any) => {
+  if (!isTeacher(ctx)) return ctx.reply("Faqat o'qituvchi!");
+  
+  const studentId = ctx.match[1];
+  const student = await User.findById(studentId);
+  if (!student) return ctx.answerCbQuery("O'quvchi topilmadi!");
+
+  const today = moment().format('YYYY-MM-DD');
+  const currentAttendance = await Attendance.findOne({ userId: studentId, date: today });
+
+  await ctx.reply(
+    `*${student.fullName}* uchun davomatni belgilang:`,
+    {
+      parse_mode: 'Markdown',
+      reply_markup: Markup.inlineKeyboard([
+        [
+          Markup.button.callback('✅ Kelgan', `mark_present_${studentId}`),
+          Markup.button.callback('⏰ Kechikdi', `mark_late_${studentId}`)
+        ],
+        [
+          Markup.button.callback('❌ Kelmadi', `mark_absent_${studentId}`)
+        ],
+        [
+          backButton('take_attendance')
+        ]
+      ]).reply_markup
+    }
+  );
+
+  ctx.answerCbQuery();
+});
+
+// Davomat belgilash handlerlari
+bot.action(/mark_(present|late|absent)_(.+)/, async (ctx: any) => {
+  if (!isTeacher(ctx)) return ctx.reply("Faqat o'qituvchi!");
+  
+  const status = ctx.match[1];
+  const studentId = ctx.match[2];
+  const today = moment().format('YYYY-MM-DD');
+  
+  const student = await User.findById(studentId);
+  if (!student) return ctx.answerCbQuery("O'quvchi topilmadi!");
+
+  // Davomatni yangilash yoki yaratish
+  await Attendance.findOneAndUpdate(
+    { userId: studentId, date: today },
+    { status, date: today },
+    { upsert: true, new: true }
+  );
+
+  const statusText = {
+    present: '✅ Kelgan',
+    late: '⏰ Kechikdi', 
+    absent: '❌ Kelmadi'
+  }[status];
+
+  await ctx.reply(
+    `*${student.fullName}* uchun davomat belgilandi: ${statusText}`,
+    {
+      parse_mode: 'Markdown',
+      reply_markup: Markup.inlineKeyboard([
+        [backButton('take_attendance')]
+      ]).reply_markup
+    }
+  );
+
+  // O'quvchiga xabar yuborish (agar kerak bo'lsa)
+  try {
+    const statusMessage = {
+      present: 'Siz bugun darsga kelganingiz belgilandi. ✅',
+      late: 'Siz bugun darsga kechikkaningiz belgilandi. ⏰',
+      absent: 'Siz bugun darsga kelmaganingiz belgilandi. ❌'
+    }[status];
+
+    await bot.telegram.sendMessage(
+      student.telegramId,
+      `${statusMessage}\nSana: ${today}`
+    );
+  } catch (e) {
+    console.log(`O'quvchiga xabar yuborilmadi: ${student.fullName}`);
+  }
+
+  ctx.answerCbQuery("Davomat belgilandi!");
 });
 
 // === RO'YXATDAN O'TISH ===
@@ -868,17 +1120,15 @@ bot.action(/grade_hw_(.+)/, async (ctx: any) => {
   ctx.reply("Bahoni kiriting (1-5):", Markup.inlineKeyboard([[backButton(`view_hw_${hwId}`)]]));
 });
 
-// === TO'LOVLAR RO'YXATI (XATOLIK TUGATILGAN) ===
+// === TO'LOVLAR RO'YXATI ===
 bot.action('payment_list', async (ctx: any) => {
   if (!isTeacher(ctx)) return ctx.reply("Faqat o'qituvchi!");
   const currentMonth = moment().format('YYYY-MM');
   
-  // Populate bilan to'g'ri so'rov
   const payments = await Payment.find({ month: currentMonth })
     .populate<{ userId: IUser }>('userId')
     .exec();
 
-  // Null qiymatlarni filtrlash
   const paid = payments
     .filter(p => p.paid && p.userId && p.userId.fullName)
     .map(p => `${p.userId.fullName} — ${p.amount.toLocaleString()} so'm`)
@@ -1042,15 +1292,6 @@ bot.action('new_day', async (ctx: any) => {
     }
   }
   ctx.reply("Yangi kun boshlandi!", { reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu')]]).reply_markup });
-});
-
-bot.action('lesson_started', async (ctx: any) => {
-  if (!isTeacher(ctx)) return;
-  const students = await User.find({ role: 'student' });
-  for (const s of students) {
-    await bot.telegram.sendMessage(s.telegramId, "Dars boshlandi! Tez keling!");
-  }
-  ctx.reply("Xabar yuborildi!", { reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu')]]).reply_markup });
 });
 
 // === SERVER ===
