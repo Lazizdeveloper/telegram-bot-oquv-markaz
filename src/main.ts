@@ -24,7 +24,7 @@ const db = mongoose.connection;
 db.on('error', console.error.bind(console, 'MongoDB xatosi:'));
 db.once('open', () => console.log('MongoDB ulandi'));
 
-// === YORDAMCHI FUNKSIYA ===
+// Yordamchi
 const backButton = (callbackData: string) => Markup.button.callback("Orqaga", callbackData);
 
 // === MODELLAR ===
@@ -156,24 +156,66 @@ setInterval(async () => {
   }
 }, 24 * 60 * 60 * 1000);
 
-// === TO'LOV ESLATMA ===
+// === TO‘LOV ESLATMA (3 kun oldin + 1 kun oldin + to‘lov kuni) ===
 setInterval(async () => {
   const today = moment().date();
-  const students = await User.find({ role: 'student', paymentDay: today });
+  const currentMonth = moment().format('YYYY-MM');
+  const students = await User.find({ role: 'student' });
+
   for (const student of students) {
-    try {
-      await bot.telegram.sendMessage(
-        student.telegramId,
-        `*Bugun to'lov kuni!* (${today}-sana)\n` +
-        `Summa: *${student.paymentAmount.toLocaleString()} so'm*\n` +
-        `/payment — to'lov qilish\n/homework — vazifalarni ko'rish`,
-        { parse_mode: 'Markdown' }
-      );
-    } catch (e) {
-      console.log(`Xabar yuborilmadi: ${student.fullName}`);
+    const paymentDay = student.paymentDay;
+    const daysUntil = paymentDay - today;
+
+    let payment = await Payment.findOne({ userId: student._id, month: currentMonth });
+    if (!payment) continue;
+
+    let message = '';
+    let sent = false;
+
+    // 3 kun oldin
+    if (daysUntil === 3 && !payment.paid) {
+      message = `
+*To'lov muddati yaqinlashmoqda!*
+
+3 kun ichida to'lang: *${paymentDay}-sana*
+Summa: *${payment.amount.toLocaleString()} so'm*
+/payment → hozir to'lash
+      `.trim();
+      sent = true;
+    }
+
+    // 1 kun oldin
+    if (daysUntil === 1 && !payment.paid) {
+      message = `
+*ERTAGA TO‘LOV KUNI!*
+
+Oxirgi imkoniyat: *${paymentDay}-sana*
+Summa: *${payment.amount.toLocaleString()} so'm*
+/payment → hozir to'lash
+      `.trim();
+      sent = true;
+    }
+
+    // To‘lov kuni
+    if (daysUntil === 0 && !payment.paid) {
+      message = `
+*BUGUN TO‘LOV KUNI!*
+
+Summa: *${payment.amount.toLocaleString()} so'm*
+/payment → hozir to'lash
+      `.trim();
+      sent = true;
+    }
+
+    if (sent) {
+      try {
+        await bot.telegram.sendMessage(student.telegramId, message, { parse_mode: 'Markdown' });
+      } catch (e) {
+        console.log(`Eslatma yuborilmadi: ${student.fullName}`);
+      }
     }
   }
-}, 24 * 60 * 60 * 1000);
+}, 24 * 60 * 60 * 1000); // har 24 soatda
 
 // === BUYRUQLAR ===
 bot.command('start', async (ctx: any) => {
@@ -269,7 +311,6 @@ bot.hears("Ro'yxatdan o'tish", async (ctx: any) => {
 bot.on('text', async (ctx: any) => {
   if (!ctx.session?.step) return;
 
-  // ----- registration -----
   if (ctx.session.step === 'reg_fullName') {
     ctx.session.fullName = ctx.message.text.trim();
     ctx.session.step = 'reg_phone';
@@ -295,7 +336,6 @@ bot.on('text', async (ctx: any) => {
     return ctx.reply("Ro'yxatdan o'tdingiz! /profile", Markup.removeKeyboard()).then(() => showMainMenu(ctx));
   }
 
-  // ----- homework answer (text) -----
   if (ctx.session.answering_homework) {
     const user = await User.findOne({ telegramId: ctx.from.id });
     const today = moment().format('YYYY-MM-DD');
@@ -309,7 +349,6 @@ bot.on('text', async (ctx: any) => {
     return;
   }
 
-  // ----- edit profile -----
   if (ctx.session.edit) {
     if (ctx.session.step === 'edit_phone') {
       if (!/^\+998\d{9}$/.test(ctx.message.text)) return ctx.reply("Noto'g'ri telefon!");
@@ -328,7 +367,6 @@ bot.on('text', async (ctx: any) => {
     }
   }
 
-  // ----- schedule add -----
   if (ctx.session.step === 'sched_time') {
     ctx.session.time = ctx.message.text;
     ctx.session.step = 'sched_group';
@@ -342,7 +380,6 @@ bot.on('text', async (ctx: any) => {
     return;
   }
 
-  // ----- send homework (teacher) -----
   if (ctx.session.step === 'send_homework_content' && isTeacher(ctx)) {
     const taskText = ctx.message.text;
     const today = moment().format('YYYY-MM-DD');
@@ -359,7 +396,6 @@ bot.on('text', async (ctx: any) => {
     return ctx.reply("Vazifa barcha o'quvchilarga yuborildi!");
   }
 
-  // ----- set payment day (teacher) -----
   if (ctx.session.step === 'set_payment_day' && isTeacher(ctx)) {
     const day = parseInt(ctx.message.text.trim());
     if (isNaN(day) || day < 1 || day > 31) return ctx.reply("1–31 oralig'ida son kiriting.");
@@ -371,7 +407,6 @@ bot.on('text', async (ctx: any) => {
     return;
   }
 
-  // ----- set payment amount (teacher) -----
   if (ctx.session.step === 'set_payment_amount' && isTeacher(ctx)) {
     const amount = parseInt(ctx.message.text.trim().replace(/\s/g, ''));
     if (isNaN(amount) || amount <= 0) return ctx.reply("Musbat son kiriting.");
@@ -383,7 +418,6 @@ bot.on('text', async (ctx: any) => {
     return;
   }
 
-  // ----- grade homework (teacher) -----
   if (ctx.session.step === 'grade_score' && isTeacher(ctx)) {
     const score = parseInt(ctx.message.text.trim());
     if (isNaN(score) || score < 1 || score > 5) {
@@ -418,7 +452,6 @@ bot.on('text', async (ctx: any) => {
 
 // === RASMLAR ===
 bot.on('photo', async (ctx: any) => {
-  // === CHEK YUBORISH (ZAMONAVIY) ===
   if (ctx.session?.waitingForReceipt) {
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user) return ctx.reply("Foydalanuvchi topilmadi.");
@@ -469,7 +502,6 @@ Sabr qiling...
     return;
   }
 
-  // === VAZIFA RASMI (teacher) ===
   if (ctx.session?.step === 'send_homework_content' && isTeacher(ctx)) {
     const caption = ctx.message.caption || "Uyga vazifa (rasm).";
     const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
@@ -487,7 +519,6 @@ Sabr qiling...
     return ctx.reply("Rasmli vazifa yuborildi!");
   }
 
-  // === VAZIFA JAVOBI (student) ===
   if (ctx.session?.answering_homework) {
     const user = await User.findOne({ telegramId: ctx.from.id });
     const today = moment().format('YYYY-MM-DD');
@@ -503,7 +534,7 @@ Sabr qiling...
   }
 });
 
-// === TO'LOV (ZAMONAVIY) ===
+// === TO'LOV STATUS ===
 const showPaymentStatus = async (ctx: any) => {
   const user = await User.findOne({ telegramId: ctx.from.id });
   if (!user) return ctx.reply("Ro'yxatdan o'tmadingiz.");
@@ -668,7 +699,7 @@ const showPaymentHistory = async (ctx: any) => {
 
 bot.action('payment_history', showPaymentHistory);
 
-// === QOLGAN QISMLAR (O'ZGARMAGAN) ===
+// === QOLGAN QISMLAR ===
 const showProfile = async (ctx: any) => {
   const user = await User.findOne({ telegramId: ctx.from.id });
   if (!user) return ctx.reply("Ro'yxatdan o'ting: /start");
