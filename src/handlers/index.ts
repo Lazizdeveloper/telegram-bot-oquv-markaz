@@ -1188,7 +1188,7 @@ export const handleRegistration = async (ctx: any) => {
       ctx.session.registrationStep = 'parent_phone';
       
       await ctx.replyWithMarkdown(
-        "📞 *Ota-ona telefon raqamini kiriting:*\n\n" +
+        "📞 *Ota yoki onangizni telefon raqamini kiriting:*\n\n" +
         "Masalan: +998901234567 yoki 901234567\n\n" +
         "*Eslatma:* Bu raqam ogohlantirish va aloqa uchun ishlatiladi."
       );
@@ -1221,8 +1221,8 @@ export const handleRegistration = async (ctx: any) => {
       ctx.session.registrationStep = 'student_phone';
       
       await ctx.replyWithMarkdown(
-        "📱 *O'quvchi telefon raqamini kiriting:*\n\n" +
-        "Agar o'quvchining telefon raqami bo'lsa, kiriting. Aks holda 'yo'q' deb yozing."
+        "📱 *O'zingizni telefon raqamingizni kiriting:*\n\n" +
+        "Agar telefon raqami bo'lsa, kiriting. Aks holda 'yo'q' deb yozing."
       );
       break;
 
