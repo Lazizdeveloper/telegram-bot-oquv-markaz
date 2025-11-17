@@ -695,46 +695,68 @@ Sabr qiling...
 
 // ==================== ACTION HANDLERLAR ====================
 
+// Callback query xatolarini bartaraf qilish uchun wrapper funksiya
+const safeActionHandler = (handler: Function) => {
+  return async (ctx: any) => {
+    try {
+      // Avval tezda callback query ga javob beramiz
+      try {
+        await ctx.answerCbQuery();
+      } catch (error) {
+        console.log('Callback query already expired, continuing...');
+      }
+      await handler(ctx);
+    } catch (error) {
+      console.error('Action handler xatosi:', error);
+      try {
+        await ctx.reply("❌ Xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.");
+      } catch (e) {
+        // Xabar yuborish ham xato bersa, hech narsa qilmaymiz
+      }
+    }
+  };
+};
+
 // Asosiy menyu va boshqa handlerlar
-bot.action('back_to_menu', showMainMenu);
-bot.action('profile', showProfile);
-bot.action('payment_status', showPaymentStatus);
-bot.action('payment_list', showPaymentList);
-bot.action('rating', showRating);
-bot.action('check_homework', showUncheckedHomeworks);
-bot.action(/hw_page_(.+)/, showHomeworkPageHandler);
-bot.action('payment_history', showPaymentHistory);
-bot.action('view_schedule', viewSchedule);
-bot.action('student_stats', showStudentStats);
+bot.action('back_to_menu', safeActionHandler(showMainMenu));
+bot.action('profile', safeActionHandler(showProfile));
+bot.action('payment_status', safeActionHandler(showPaymentStatus));
+bot.action('payment_list', safeActionHandler(showPaymentList));
+bot.action('rating', safeActionHandler(showRating));
+bot.action('check_homework', safeActionHandler(showUncheckedHomeworks));
+bot.action(/hw_page_(.+)/, safeActionHandler(showHomeworkPageHandler));
+bot.action('payment_history', safeActionHandler(showPaymentHistory));
+bot.action('view_schedule', safeActionHandler(viewSchedule));
+bot.action('student_stats', safeActionHandler(showStudentStats));
 
 // To'lov handlerlari
-bot.action('send_receipt', sendReceipt);
-bot.action('offline_payment', offlinePayment);
-bot.action(/confirm_(receipt|offline)_(.+)/, confirmPayment);
-bot.action(/reject_receipt_(.+)/, rejectReceipt);
+bot.action('send_receipt', safeActionHandler(sendReceipt));
+bot.action('offline_payment', safeActionHandler(offlinePayment));
+bot.action(/confirm_(receipt|offline)_(.+)/, safeActionHandler(confirmPayment));
+bot.action(/reject_receipt_(.+)/, safeActionHandler(rejectReceipt));
 
 // O'qituvchi handlerlari
-bot.action('list_students', listStudents);
-bot.action('add_schedule', addSchedule);
-bot.action('manual_homework', manualHomework);
-bot.action('take_attendance', takeAttendance);
-bot.action(/attendance_page_(.+)/, attendancePageHandler);
-bot.action(/attendance_student_(.+)/, attendanceStudentHandler);
-bot.action(/mark_(present|late|absent)_(.+)/, markAttendanceHandler);
+bot.action('list_students', safeActionHandler(listStudents));
+bot.action('add_schedule', safeActionHandler(addSchedule));
+bot.action('manual_homework', safeActionHandler(manualHomework));
+bot.action('take_attendance', safeActionHandler(takeAttendance));
+bot.action(/attendance_page_(.+)/, safeActionHandler(attendancePageHandler));
+bot.action(/attendance_student_(.+)/, safeActionHandler(attendanceStudentHandler));
+bot.action(/mark_(present|late|absent)_(.+)/, safeActionHandler(markAttendanceHandler));
 
 // O'quvchi ma'lumotlari handlerlari
-bot.action(/student_(.+)/, showStudentDetails);
-bot.action(/set_payment_day_(.+)/, setPaymentDay);
-bot.action(/set_payment_amount_(.+)/, setPaymentAmount);
-bot.action(/attendance_history_(.+)/, showAttendanceHistory);
-bot.action(/homework_history_(.+)/, showHomeworkHistory);
+bot.action(/student_(.+)/, safeActionHandler(showStudentDetails));
+bot.action(/set_payment_day_(.+)/, safeActionHandler(setPaymentDay));
+bot.action(/set_payment_amount_(.+)/, safeActionHandler(setPaymentAmount));
+bot.action(/attendance_history_(.+)/, safeActionHandler(showAttendanceHistory));
+bot.action(/homework_history_(.+)/, safeActionHandler(showHomeworkHistory));
 
 // Til handlerlari
-bot.action('change_language', changeLanguage);
-bot.action(/set_language_(.+)/, setLanguage);
+bot.action('change_language', safeActionHandler(changeLanguage));
+bot.action(/set_language_(.+)/, safeActionHandler(setLanguage));
 
 // Jadval kunini tanlash
-bot.action(/sched_day_(.+)/, async (ctx: any) => {
+bot.action(/sched_day_(.+)/, safeActionHandler(async (ctx: any) => {
   if (!isTeacher(ctx)) return ctx.reply(t('teacher_only', ctx));
   
   const day = ctx.match[1];
@@ -742,15 +764,15 @@ bot.action(/sched_day_(.+)/, async (ctx: any) => {
   ctx.session.step = 'sched_time';
   
   await ctx.reply(`🕒 ${day} kuni uchun vaqtni kiriting (masalan: 09:00-10:30):`);
-});
+}));
 
 // O'quvchi vazifa topshirish
-bot.action('submit_homework', (ctx: any) => {
+bot.action('submit_homework', safeActionHandler(async (ctx: any) => {
   ctx.session.answering_homework = true;
   ctx.reply("Javobingizni yozing yoki rasm yuboring:", {
     reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu', ctx)]]).reply_markup
   });
-});
+}));
 
 // ==================== SERVER ====================
 
