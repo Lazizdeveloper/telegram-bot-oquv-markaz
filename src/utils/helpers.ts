@@ -429,3 +429,4 @@ export const getHomeworkStats = async (studentId: string): Promise<{ total: numb
 
 // Import qilinadigan modullar (agar kerak bo'lsa)
 import { Attendance, Payment, Homework } from '../config/database';
+

@@ -43,7 +43,7 @@ export const handleRegistration = async (ctx: any) => {
       ctx.session.language = 'uz';
       ctx.session.registrationStep = 'full_name';
       ctx.session.registrationData = { language: 'uz' };
-      return ctx.replyWithMarkdown(`*O'quv markaziga xush kelibsiz!*\n\nIltimos, o'quvchining ism va familiyasini kiriting:`);
+      return ctx.replyWithMarkdown(`*O'quv markaziga xush kelibsiz!*\n\nIltimos, ism va familiyangizni kiriting:`);
     }
 
     const step = ctx.session.registrationStep;
@@ -55,7 +55,7 @@ export const handleRegistration = async (ctx: any) => {
         ctx.session.registrationData.fullName = text;
         ctx.session.registrationStep = 'parent_phone';
         await ctx.replyWithMarkdown(
-          "*Ota-ona telefon raqamini kiriting:*\n\n" +
+          "*Ota yoki ona telefon raqamini kiriting:*\n\n" +
           "Masalan: +998901234567 yoki 901234567"
         );
         break;
@@ -76,8 +76,8 @@ export const handleRegistration = async (ctx: any) => {
 
         // BU YERDA faqat o'quvchi telefoni uchun tugma chiqadi
         await ctx.replyWithMarkdown(
-          "*O'quvchi telefon raqamini kiriting:*\n\n" +
-          "Agar o'quvchining telefon raqami bo'lsa, kiriting.\n" +
+          "*O'quvchi telefon raqamingizni kiriting:*\n\n" +
+          "Agar telefon raqami bo'lsa, kiriting.\n" +
           "Aks holda *yo'q* deb yozing.\n\n" +
           "_Yoki quyidagi tugma orqali ulashing:_",
           {
@@ -217,7 +217,7 @@ export const showMainMenu = async (ctx: any) => {
       await ctx.reply("👨‍🏫 O'qituvchi paneli:", Markup.inlineKeyboard([
         [Markup.button.callback(t('students', ctx), 'list_students')],
         [Markup.button.callback(t('payment', ctx), 'payment_list')],
-        [Markup.button.callback("📅 Jadval qo'shish", 'add_schedule')],
+        [Markup.button.callback("Jadval", 'manage_schedule')], // YANGI TUGMA,
         [Markup.button.callback(t('homework', ctx), 'manual_homework')],
         [Markup.button.callback("📝 Tekshirilmagan vazifalar", 'check_homework')],
         [Markup.button.callback(t('attendance', ctx), 'take_attendance')],
@@ -232,7 +232,7 @@ export const showMainMenu = async (ctx: any) => {
         [Markup.button.callback("📊 To'lov tarixi", 'payment_history')],
         [Markup.button.callback(t('schedule', ctx), 'view_schedule')],
         [Markup.button.callback(t('homework', ctx), 'submit_homework')],
-        [Markup.button.callback("📈 O'quvchilar statistikasi", 'student_stats')],
+        [Markup.button.callback(t("📈 Sizning statistikangiz", ctx), 'student_stats')],
         [Markup.button.callback("🌐 Tilni o'zgartirish", 'change_language')]
       ]));
     }
@@ -1127,25 +1127,117 @@ export const showPaymentHistory = async (ctx: any) => {
 };
 
 // === JADVAL ===
-export const viewSchedule = async (ctx: any) => {
+export const manageSchedule = async (ctx: any) => {
   await safeAnswerCbQuery(ctx);
-  
-  try {
-    const schedules = await Schedule.find();
-    if (schedules.length === 0) {
-      await ctx.reply("Jadval yo'q.");
-      return;
-    }
-    const lines = schedules.map((s: any) => `${s.day} | ${s.time} | ${s.group}`).join('\n');
-    await ctx.reply(`Dars jadvali:\n${lines}`, { 
-      reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu', ctx)]]).reply_markup 
+  if (!isTeacher(ctx)) return ctx.reply(t('teacher_only', ctx));
+
+  const schedules = await Schedule.find().sort({ day: 1, time: 1 });
+
+  let message = "*JADVAL BOSHQARUV*\n\n";
+  if (schedules.length === 0) {
+    message += "Hozircha jadval yo‘q.";
+  } else {
+    schedules.forEach((s: any, i: number) => {
+      message += `${i + 1}. ${s.day} | ${s.time} | ${s.group}\n`;
     });
-  } catch (error) {
-    console.error('View schedule error:', error);
-    await ctx.reply("❌ Jadvalni ko'rsatishda xatolik yuz berdi.");
   }
+
+  await ctx.replyWithMarkdownV2(escapeMarkdownV2(message), {
+    reply_markup: Markup.inlineKeyboard([
+      [Markup.button.callback("Yangi dars qo‘shish", "add_schedule")],
+      [Markup.button.callback("Darsni tahrirlash", "edit_schedule")],
+      [Markup.button.callback("Darsni o‘chirish", "delete_schedule")],
+      [backButton('back_to_menu', ctx)]
+    ]).reply_markup
+  });
 };
 
+
+export const editScheduleStart = async (ctx: any) => {
+  await safeAnswerCbQuery(ctx);
+  if (!isTeacher(ctx)) return;
+
+  const schedules = await Schedule.find().sort({ day: 1, time: 1 });
+  if (schedules.length === 0) {
+    return ctx.reply("Tahrirlaydigan jadval yo‘q.", {
+      reply_markup: Markup.inlineKeyboard([[backButton('manage_schedule', ctx)]]).reply_markup
+    });
+  }
+
+  const buttons = schedules.map((s: any) => [
+    Markup.button.callback(`${s.day} | ${s.time} | ${s.group}`, `edit_sched_${s._id}`)
+  ]);
+
+  await ctx.reply("Tahrirlamoqchi bo‘lgan darsni tanlang:", {
+    reply_markup: Markup.inlineKeyboard([...buttons, [backButton('manage_schedule', ctx)]]).reply_markup
+  });
+};
+
+export const deleteScheduleStart = async (ctx: any) => {
+  await safeAnswerCbQuery(ctx);
+  if (!isTeacher(ctx)) return;
+
+  const schedules = await Schedule.find();
+  if (schedules.length === 0) {
+    return ctx.reply("O‘chiradigan dars yo‘q.");
+  }
+
+  const buttons = schedules.map((s: any) => [
+    Markup.button.callback(`${s.day} | ${s.time} | ${s.group}`, `confirm_delete_${s._id}`)
+  ]);
+
+  await ctx.reply("O‘chirish uchun darsni tanlang:", {
+    reply_markup: Markup.inlineKeyboard([...buttons, [backButton('manage_schedule', ctx)]]).reply_markup
+  });
+};
+
+// ==================== TEXT ORQALI JADVAL KIRITISH ====================
+export const handleScheduleText = async (ctx: any) => {
+  if (!ctx.message?.text || !isTeacher(ctx)) return;
+  if (!ctx.session?.scheduleStep) return;
+
+  const text = ctx.message.text.trim();
+
+  if (ctx.session.scheduleStep === 'input_time' || ctx.session.scheduleStep === 'edit_time') {
+    if (!/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(text)) {
+      return ctx.reply("Noto‘g‘ri vaqt. Masalan: 18:30");
+    }
+
+    if (ctx.session.editingSchedule) {
+      ctx.session.tempSchedule = { time: text };
+      ctx.session.scheduleStep = 'edit_group';
+      await ctx.reply(`Yangi vaqt: ${text}\n\nYangi guruh nomini kiriting:`);
+    } else {
+      ctx.session.newSchedule.time = text;
+      ctx.session.scheduleStep = 'input_group';
+      await ctx.reply(`Vaqt saqlandi: ${text}\n\nGuruh nomini kiriting:`);
+    }
+  }
+
+  else if (ctx.session.scheduleStep === 'input_group' || ctx.session.scheduleStep === 'edit_group') {
+    if (text.length < 1) return ctx.reply("Guruh nomi bo‘sh bo‘lmasligi kerak!");
+
+    if (ctx.session.editingSchedule) {
+      await Schedule.findByIdAndUpdate(ctx.session.editingSchedule, {
+        time: ctx.session.tempSchedule.time,
+        group: text
+      });
+      delete ctx.session.editingSchedule;
+      delete ctx.session.tempSchedule;
+    } else {
+      const { day, time } = ctx.session.newSchedule;
+      await new Schedule({ day, time, group: text }).save();
+      delete ctx.session.newSchedule;
+    }
+
+    delete ctx.session.scheduleStep;
+
+    await ctx.replyWithMarkdownV2(
+      escapeMarkdownV2("Jadval muvaffaqiyatli yangilandi!"),
+      { reply_markup: Markup.inlineKeyboard([[Markup.button.callback("Jadval", "manage_schedule")]]).reply_markup }
+    );
+  }
+};
 // === O'QUVCHI STATISTIKASI ===
 export const showStudentStats = async (ctx: any) => {
   await safeAnswerCbQuery(ctx);
@@ -1934,4 +2026,6 @@ export const cancelRemoveStudent = async (ctx: any) => {
     await ctx.reply("❌ Xatolik yuz berdi.");
   }
 };
+
+
 

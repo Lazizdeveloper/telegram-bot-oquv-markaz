@@ -10,7 +10,8 @@
         "current_homework_id": "6918bbd0b940b98017de9f10",
         "language": "uz",
         "answering_homework": true,
-        "studentToRemove": "691c4445917ee11532cdb77f"
+        "studentToRemove": "691c48524cc4383918770f69",
+        "step": "send_homework_content"
       }
     },
     {
@@ -27,7 +28,7 @@
       "data": {
         "edit": true,
         "step": "edit_phone",
-        "language": "uz",
+        "language": "en",
         "answering_homework": true
       }
     },
