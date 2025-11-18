@@ -228,6 +228,8 @@ export const showMainMenu = async (ctx: any) => {
     } else {
       await ctx.reply("🎓 O'quvchi menyusi:", Markup.inlineKeyboard([
         [Markup.button.callback(t('profile', ctx), 'profile')],
+        // O'quvchi menyusi ichida
+        [Markup.button.callback("Karra jadvali o'rganish", 'multiplication_quiz')],
         [Markup.button.callback(t('payment', ctx), 'payment_status')],
         [Markup.button.callback("📊 To'lov tarixi", 'payment_history')],
         [Markup.button.callback(t('schedule', ctx), 'view_schedule')],
@@ -2028,4 +2030,8 @@ export const cancelRemoveStudent = async (ctx: any) => {
 };
 
 
-
+export {
+  startMultiplicationQuiz,
+  handleQuizAnswer,
+  stopQuiz,
+} from './quiz';

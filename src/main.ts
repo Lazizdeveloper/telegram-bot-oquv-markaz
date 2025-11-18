@@ -5,6 +5,12 @@ import moment from 'moment';
 import 'moment/locale/uz';
 import 'dotenv/config';
 
+import {
+  startMultiplicationQuiz,
+  handleQuizAnswer,
+  stopQuiz
+} from './handlers';
+
 import { User, Attendance, Payment, Schedule, Homework, connectDB } from './config/database';
 import { 
   isTeacher, 
@@ -237,6 +243,11 @@ bot.action(/homework_history_(.+)/, safeAction(showHomeworkHistory));
 
 bot.action('change_language', safeAction(changeLanguage));
 bot.action(/set_language_(.+)/, safeAction(setLanguage));
+
+// KARRA JADVALI QUIZ
+bot.action('multiplication_quiz', safeAction(startMultiplicationQuiz));
+bot.action(/^quiz_ans_(\d+)$/, safeAction(handleQuizAnswer));
+bot.action('quiz_stop', safeAction(stopQuiz));
 
 // ==================== JADVAL BOSHQARUV ACTIONLARI ====================
 bot.action('manage_schedule', safeAction(manageSchedule));
