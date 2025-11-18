@@ -12,6 +12,14 @@ export const isRegistered = async (ctx: any): Promise<boolean> => {
   return !!user;
 };
 
+// utils/helpers.ts (mavjud fayl ichiga qo'shing)
+
+export const escapeMarkdownV2 = (text: string): string => {
+  // Telegram MarkdownV2 da rezervlangan barcha belgilarni escape qiladi
+  const chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'];
+  return text.replace(new RegExp(chars.map(c => `\\${c}`).join('|'), 'g'), '\\$&');
+};
+
 export const getLanguage = (ctx: any): string => {
   return ctx.session?.language || 'uz';
 };

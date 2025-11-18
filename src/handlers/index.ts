@@ -2,6 +2,7 @@ import { Markup } from 'telegraf';
 import { User, Attendance, Payment, Schedule, Homework, IUser, IHomework } from '../config/database';
 import { isTeacher, isRegistered, getLanguage, t, setMomentLocale, TEACHER_ID, PAYMENT_CARD_NUMBER, PAYMENT_CARD_NAME, backButton } from '../utils/helpers';
 import moment from 'moment';
+import { escapeMarkdownV2 } from '../utils/helpers';
 
 // === YORDAMCHI FUNKSIYALAR ===
 const safeAnswerCbQuery = async (ctx: any, text?: string) => {
@@ -378,28 +379,30 @@ export const handleProfileEdit = async (ctx: any) => {
         );
         break;
 
-      case 'edit_address':
-        if (text.length < 5) {
-          return ctx.reply("Manzil juda qisqa. Batafsil yozing:");
-        }
-        user.address = text;
-        await user.save();
+case 'edit_address':
+  if (text.length < 5) {
+    return ctx.reply("Manzil juda qisqa. Batafsil yozing:");
+  }
+  user.address = text;
+  await user.save();
 
-        delete ctx.session.editStep;
+  delete ctx.session.editStep;
 
-        await ctx.replyWithMarkdownV2(
-          `*Profil muvaffaqiyatli yangilandi!*\n\n` +
-          `Ism\\-familiya: *${user.fullName}*\n` +
-          `Ota\\-ona: \`${user.parentPhone}\`\n` +
-          `O'quvchi: ${user.studentPhone ? `\`${user.studentPhone}\`` : "yo'q"}\n` +
-          `Manzil: ${user.address}`,
-          {
-            reply_markup: Markup.inlineKeyboard([
-              [backButton('back_to_menu', ctx)]
-            ]).reply_markup
-          }
-        );
-        break;
+  // TO'G'RI USUL: Hech qanday qo'lda escape qilmaymiz!
+  const message = `*Profil muvaffaqiyatli yangilandi!*
+
+Ism-familiya: *${user.fullName}*
+Ota-ona: \`${user.parentPhone}\`
+O'quvchi: ${user.studentPhone ? `\`${user.studentPhone}\`` : "yo'q"}
+Manzil: ${user.address}`;
+
+  // Faqat bitta joyda escape qilamiz — oxirida!
+  await ctx.replyWithMarkdownV2(escapeMarkdownV2(message), {
+    reply_markup: Markup.inlineKeyboard([
+      [backButton('back_to_menu', ctx)]
+    ]).reply_markup
+  });
+  break;
     }
   } catch (error) {
     console.error('Handle profile edit error:', error);

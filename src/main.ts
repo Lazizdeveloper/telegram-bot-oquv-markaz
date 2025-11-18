@@ -49,7 +49,12 @@ import {
   removeStudentStart,
   confirmRemoveStudent,
   finalRemoveStudent,
-  cancelRemoveStudent
+  cancelRemoveStudent,
+
+  // PROFIL TAHRIRLASH — YANGI!
+  editProfile,
+  handleProfileEdit,
+  cancelEdit
 } from './handlers';
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -73,14 +78,21 @@ connectDB()
 bot.start(startCommand);
 bot.on('contact', handlePhoneShare);
 
-// ==================== TEXT HANDLER ====================
+// ==================== TEXT HANDLER — ENG MUHIM ====================
 bot.on('text', async (ctx: any) => {
   try {
     const user = await User.findOne({ telegramId: ctx.from.id });
     const text = ctx.message?.text?.trim();
     const step = ctx.session?.step;
 
+    // Ro'yxatdan o'tmagan bo'lsa
     if (!user) return handleRegistration(ctx);
+
+    // PROFIL TAHRIRLASH (birinchi navbatda!)
+    if (ctx.session?.editStep) {
+      await handleProfileEdit(ctx);
+      return;
+    }
 
     // To'lov kunini o'zgartirish
     if (step === 'set_payment_day') {
@@ -91,7 +103,7 @@ bot.on('text', async (ctx: any) => {
       await User.findByIdAndUpdate(ctx.session.studentId, { paymentDay: day });
       delete ctx.session.step;
       delete ctx.session.studentId;
-      await ctx.reply(`To'lov kuni ${day}-kunga muvaffaqiyatli o'zgartirildi!`, {
+      await ctx.reply(`To'lov kuni ${day}-kunga o'zgartirildi!`, {
         reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu', ctx)]]).reply_markup
       });
       return;
@@ -112,7 +124,7 @@ bot.on('text', async (ctx: any) => {
       return;
     }
 
-    // Jadval qo'shish
+    // Jadval vaqti
     if (step === 'sched_time') {
       const timeRegex = /^\d{2}:\d{2}-\d{2}:\d{2}$/;
       if (!timeRegex.test(text)) {
@@ -170,7 +182,7 @@ bot.on('photo', async (ctx: any) => {
       });
 
       delete ctx.session.waitingForReceipt;
-      await ctx.reply("Chekingiz muvaffaqiyatli yuborildi! Tez orada tasdiqlanadi.", {
+      await ctx.reply("Chekingiz muvaffaqiyatli yuborildi!", {
         reply_markup: Markup.inlineKeyboard([[backButton('payment_status', ctx)]]).reply_markup
       });
     }
@@ -179,23 +191,19 @@ bot.on('photo', async (ctx: any) => {
   }
 });
 
-// ==================== ENG MUHIM: XAVFSIZ ACTION HANDLER ====================
-// "query is too old" xatoliklari endi umuman chiqmaydi!
+// ==================== XAVFSIZ ACTION HANDLER (query is too old yo'q) ====================
 const safeActionHandler = (handler: Function) => {
   return async (ctx: any) => {
     try {
-      // Telegramning "query is too old" xatosini oldini olamiz
-      ctx.answerCbQuery().catch(() => {}); // Agar eski bo'lsa — e'tiborsiz qoldiramiz
+      ctx.answerCbQuery().catch(() => {});
       await handler(ctx);
     } catch (error: any) {
-      // Faqat haqiqiy xatoliklarni log qilamiz
       if (error?.description?.includes('query is too old') || 
           error?.description?.includes('query ID is invalid')) {
-        // Bu oddiy holat — hech narsa qilmaymiz
         return;
       }
       console.error('Action handler xatosi:', error);
-      try { await ctx.reply("Xatolik yuz berdi. Qaytadan urinib ko'ring."); } catch (_) {}
+      try { await ctx.reply("Xatolik yuz berdi."); } catch (_) {}
     }
   };
 };
@@ -203,6 +211,9 @@ const safeActionHandler = (handler: Function) => {
 // ==================== BARCHA ACTIONLAR ====================
 bot.action('back_to_menu', safeActionHandler(showMainMenu));
 bot.action('profile', safeActionHandler(showProfile));
+bot.action('edit_profile', safeActionHandler(editProfile));           // YANGI
+bot.action('cancel_edit', safeActionHandler(cancelEdit));             // YANGI
+
 bot.action('payment_status', safeActionHandler(showPaymentStatus));
 bot.action('payment_list', safeActionHandler(showPaymentList));
 bot.action('rating', safeActionHandler(showRating));
