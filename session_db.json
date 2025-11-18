@@ -9,7 +9,8 @@
         "time": "09:00-10:30",
         "current_homework_id": "6918bbd0b940b98017de9f10",
         "language": "uz",
-        "answering_homework": true
+        "answering_homework": true,
+        "studentToRemove": "691c4445917ee11532cdb77f"
       }
     },
     {
@@ -26,7 +27,8 @@
       "data": {
         "edit": true,
         "step": "edit_phone",
-        "language": "uz"
+        "language": "uz",
+        "answering_homework": true
       }
     },
     {

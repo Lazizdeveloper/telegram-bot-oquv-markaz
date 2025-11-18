@@ -73,17 +73,16 @@ connectDB()
 bot.start(startCommand);
 bot.on('contact', handlePhoneShare);
 
-// ==================== TEXT HANDLER — ENG MUHIM! ====================
+// ==================== TEXT HANDLER ====================
 bot.on('text', async (ctx: any) => {
   try {
     const user = await User.findOne({ telegramId: ctx.from.id });
     const text = ctx.message?.text?.trim();
     const step = ctx.session?.step;
 
-    // Ro'yxatdan o'tmagan bo'lsa
     if (!user) return handleRegistration(ctx);
 
-    // === 1. To'lov kunini o'zgartirish ===
+    // To'lov kunini o'zgartirish
     if (step === 'set_payment_day') {
       const day = parseInt(text);
       if (isNaN(day) || day < 1 || day > 31) {
@@ -92,15 +91,13 @@ bot.on('text', async (ctx: any) => {
       await User.findByIdAndUpdate(ctx.session.studentId, { paymentDay: day });
       delete ctx.session.step;
       delete ctx.session.studentId;
-
-      const student = await User.findById(ctx.session.lastStudentId || ctx.session.studentId);
-      await ctx.reply(`To'lov kuni ${day}-kunga o'zgartirildi!`, {
+      await ctx.reply(`To'lov kuni ${day}-kunga muvaffaqiyatli o'zgartirildi!`, {
         reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu', ctx)]]).reply_markup
       });
       return;
     }
 
-    // === 2. To'lov summasini o'zgartirish ===
+    // To'lov summasini o'zgartirish
     if (step === 'set_payment_amount') {
       const amount = parseInt(text.replace(/\D/g, ''));
       if (isNaN(amount) || amount < 10000) {
@@ -109,35 +106,28 @@ bot.on('text', async (ctx: any) => {
       await User.findByIdAndUpdate(ctx.session.studentId, { paymentAmount: amount });
       delete ctx.session.step;
       delete ctx.session.studentId;
-
       await ctx.reply(`Oylik to'lov summasi ${amount.toLocaleString()} so'm ga o'zgartirildi!`, {
         reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu', ctx)]]).reply_markup
       });
       return;
     }
 
-    // === 3. Jadval vaqti kiritish ===
+    // Jadval qo'shish
     if (step === 'sched_time') {
       const timeRegex = /^\d{2}:\d{2}-\d{2}:\d{2}$/;
       if (!timeRegex.test(text)) {
-        return ctx.reply("Iltimos, vaqtni quyidagi formatda kiriting: 09:00-10:30");
+        return ctx.reply("Vaqt formati noto'g'ri. Masalan: 09:00-10:30");
       }
-      await new Schedule({
-        day: ctx.session.day,
-        time: text,
-        group: "Umumiy" // agar guruh bo'lsa keyin qo'shiladi
-      }).save();
-
+      await new Schedule({ day: ctx.session.day, time: text, group: "Umumiy" }).save();
       delete ctx.session.step;
       delete ctx.session.day;
-
-      await ctx.reply(`{ctx.session.day} kuni uchun jadval qo'shildi: ${text}`, {
+      await ctx.reply(`${ctx.session.day} kuni ${text} jadvalga qo'shildi!`, {
         reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu', ctx)]]).reply_markup
       });
       return;
     }
 
-    // === 4. Vazifa yuborish (o'qituvchi) ===
+    // Vazifa yuborish
     if (step === 'send_homework_content') {
       const students = await User.find({ role: 'student' });
       for (const s of students) {
@@ -150,41 +140,26 @@ bot.on('text', async (ctx: any) => {
       return;
     }
 
-    // === 5. Boshqa holatlarda (masalan, oddiy xabarlar) ===
-    // Agar hech qanday step bo'lmasa — hech narsa qilmasin
-    // Yoki kerak bo'lsa: await showMainMenu(ctx);
-
   } catch (err) {
     console.error('Text handler xatosi:', err);
-    await ctx.reply("Xatolik yuz berdi. Qaytadan urinib ko'ring.");
+    await ctx.reply("Xatolik yuz berdi.");
   }
 });
 
-// ==================== PHOTO HANDLER (Chek va vazifa javobi) ====================
+// ==================== PHOTO HANDLER (Chek) ====================
 bot.on('photo', async (ctx: any) => {
   try {
     if (ctx.session?.waitingForReceipt) {
-      // Chek yuborilgan
       const fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
       const user = await User.findOne({ telegramId: ctx.from.id });
       if (!user) return;
 
       const currentMonth = moment().format('YYYY-MM');
       const payment = await Payment.findOne({ userId: user._id, month: currentMonth, paid: false });
-      if (!payment) {
-        await ctx.reply("Bu oy uchun to'lov topilmadi yoki allaqachon to'langan.");
-        return;
-      }
+      if (!payment) return ctx.reply("Bu oy uchun to'lov topilmadi yoki allaqachon to'langan.");
 
       await bot.telegram.sendPhoto(TEACHER_ID(), fileId, {
-        caption: `
-Yangi chek keldi
-
-O'quvchi: *${user.fullName}*
-Telefon: \`${user.parentPhone}\`
-Oy: *${moment().format('MMMM YYYY')}*
-Summa: *${payment.amount.toLocaleString()} so'm*
-        `.trim(),
+        caption: `Yangi chek\n\nO'quvchi: *${user.fullName}*\nTelefon: \`${user.parentPhone}\`\nOy: *${moment().format('MMMM YYYY')}*\nSumma: *${payment.amount.toLocaleString()} so'm*`,
         parse_mode: 'Markdown',
         reply_markup: Markup.inlineKeyboard([
           [
@@ -195,7 +170,7 @@ Summa: *${payment.amount.toLocaleString()} so'm*
       });
 
       delete ctx.session.waitingForReceipt;
-      await ctx.reply("Chekingiz o'qituvchiga yuborildi. Tez orada tasdiqlanadi!", {
+      await ctx.reply("Chekingiz muvaffaqiyatli yuborildi! Tez orada tasdiqlanadi.", {
         reply_markup: Markup.inlineKeyboard([[backButton('payment_status', ctx)]]).reply_markup
       });
     }
@@ -204,19 +179,28 @@ Summa: *${payment.amount.toLocaleString()} so'm*
   }
 });
 
-// ==================== ACTION HANDLERLAR ====================
+// ==================== ENG MUHIM: XAVFSIZ ACTION HANDLER ====================
+// "query is too old" xatoliklari endi umuman chiqmaydi!
 const safeActionHandler = (handler: Function) => {
   return async (ctx: any) => {
     try {
-      await ctx.answerCbQuery();
+      // Telegramning "query is too old" xatosini oldini olamiz
+      ctx.answerCbQuery().catch(() => {}); // Agar eski bo'lsa — e'tiborsiz qoldiramiz
       await handler(ctx);
-    } catch (error) {
+    } catch (error: any) {
+      // Faqat haqiqiy xatoliklarni log qilamiz
+      if (error?.description?.includes('query is too old') || 
+          error?.description?.includes('query ID is invalid')) {
+        // Bu oddiy holat — hech narsa qilmaymiz
+        return;
+      }
       console.error('Action handler xatosi:', error);
-      try { await ctx.reply("Xatolik yuz berdi."); } catch (_) {}
+      try { await ctx.reply("Xatolik yuz berdi. Qaytadan urinib ko'ring."); } catch (_) {}
     }
   };
 };
 
+// ==================== BARCHA ACTIONLAR ====================
 bot.action('back_to_menu', safeActionHandler(showMainMenu));
 bot.action('profile', safeActionHandler(showProfile));
 bot.action('payment_status', safeActionHandler(showPaymentStatus));

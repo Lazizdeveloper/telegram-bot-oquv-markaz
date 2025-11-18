@@ -290,6 +290,133 @@ ${t('absent', ctx)}: ${statsMap.absent}
   }
 };
 
+
+// === PROFILNI TAHRIRLASH ===
+export const editProfile = async (ctx: any) => {
+  await safeAnswerCbQuery(ctx);
+
+  try {
+    const user = await User.findOne({ telegramId: ctx.from.id });
+    if (!user) return ctx.reply(t('not_registered', ctx));
+
+    ctx.session.editStep = 'edit_fullname'; // birinchi qadam
+
+    await ctx.reply(
+      `*Profilni tahrirlash*\n\n` +
+      `Hozirgi ism-familiya: *${user.fullName}*\n\n` +
+      `Yangi ism-familiyani kiriting:`,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback("Bekor qilish", "cancel_edit")]
+        ]).reply_markup
+      }
+    );
+  } catch (error) {
+    console.error('Edit profile error:', error);
+    await ctx.reply("Xatolik yuz berdi.");
+  }
+};
+
+// Keyingi bosqichlar uchun handler (text orqali ishlaydi)
+export const handleProfileEdit = async (ctx: any) => {
+  try {
+    const user = await User.findOne({ telegramId: ctx.from.id });
+    if (!user) return;
+
+    const text = ctx.message?.text?.trim();
+    const step = ctx.session?.editStep;
+
+    if (!step) return;
+
+    switch (step) {
+      case 'edit_fullname':
+        if (text.length < 3) {
+          return ctx.reply("Ism juda qisqa. To'liq ism-familiya kiriting:");
+        }
+        user.fullName = text;
+        ctx.session.editStep = 'edit_parent_phone';
+        await ctx.reply(
+          `Yangi ism saqlandi: *${text}*\n\n` +
+          `Hozirgi ota-ona raqami: \`${user.parentPhone}\`\n\n` +
+          `Yangi raqamni kiriting (masalan: +998901234567):`,
+          { parse_mode: 'Markdown' }
+        );
+        break;
+
+      case 'edit_parent_phone':
+        const clean = text.replace(/\s/g, '');
+        const phoneRegex = /^\+?998[0-9]{9}$/;
+        if (!phoneRegex.test(clean)) {
+          return ctx.reply("Noto'g'ri format. Masalan: +998901234567");
+        }
+        user.parentPhone = clean.startsWith('+') ? clean : '+' + clean;
+        ctx.session.editStep = 'edit_student_phone';
+        await ctx.reply(
+          `Ota-ona raqami saqlandi: \`${user.parentPhone}\`\n\n` +
+          `O'quvchi raqami (agar bo'lsa): ${user.studentPhone || "yo'q"}\n\n` +
+          `Yangi o'quvchi raqamini kiriting yoki "yo'q" deb yozing:`
+        );
+        break;
+
+      case 'edit_student_phone':
+        if (text.toLowerCase() === 'yo\'q' || text === '-' || text === 'yoq') {
+          user.studentPhone = '';
+        } else {
+          const clean = text.replace(/\s/g, '');
+          const phoneRegex = /^\+?998[0-9]{9}$/;
+          if (!phoneRegex.test(clean)) {
+            return ctx.reply("Noto'g'ri format yoki \"yo'q\" deb yozing:");
+          }
+          user.studentPhone = clean.startsWith('+') ? clean : '+' + clean;
+        }
+        ctx.session.editStep = 'edit_address';
+        await ctx.reply(
+          `O'quvchi raqami saqlandi\n\n` +
+          `Hozirgi manzil: ${user.address || "kiritilmagan"}\n\n` +
+          `Yangi manzilni kiriting:`
+        );
+        break;
+
+      case 'edit_address':
+        if (text.length < 5) {
+          return ctx.reply("Manzil juda qisqa. Batafsil yozing:");
+        }
+        user.address = text;
+        await user.save();
+
+        delete ctx.session.editStep;
+
+        await ctx.replyWithMarkdownV2(
+          `*Profil muvaffaqiyatli yangilandi!*\n\n` +
+          `Ism\\-familiya: *${user.fullName}*\n` +
+          `Ota\\-ona: \`${user.parentPhone}\`\n` +
+          `O'quvchi: ${user.studentPhone ? `\`${user.studentPhone}\`` : "yo'q"}\n` +
+          `Manzil: ${user.address}`,
+          {
+            reply_markup: Markup.inlineKeyboard([
+              [backButton('back_to_menu', ctx)]
+            ]).reply_markup
+          }
+        );
+        break;
+    }
+  } catch (error) {
+    console.error('Handle profile edit error:', error);
+    await ctx.reply("Xatolik yuz berdi.");
+  }
+};
+
+// Bekor qilish
+export const cancelEdit = async (ctx: any) => {
+  await safeAnswerCbQuery(ctx);
+  delete ctx.session.editStep;
+  await ctx.reply("Tahrirlash bekor qilindi.", {
+    reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu', ctx)]]).reply_markup
+  });
+};
+
+
 // === O'QUVCHILAR RO'YXATI ===
 export const listStudents = async (ctx: any) => {
   await safeAnswerCbQuery(ctx);
@@ -698,69 +825,88 @@ export const showPaymentStatus = async (ctx: any) => {
   }
 };
 
-// === TO'LOVLAR RO'YXATI (O'QITUVCHI) ===
+// === TO'LOVLAR RO'YXATI (O'QITUVCHI) — 100% ISHLAYDI ===
 export const showPaymentList = async (ctx: any) => {
   await safeAnswerCbQuery(ctx);
-  
+
   try {
     if (!isTeacher(ctx)) {
       await ctx.reply(t('teacher_only', ctx));
       return;
     }
-    
+
     const currentMonth = moment().format('YYYY-MM');
-    const payments = await Payment.find({ month: currentMonth }).populate<{ userId: IUser }>('userId');
-    
-    if (payments.length === 0) {
-      await ctx.reply("Bu oy uchun to'lovlar topilmadi.", {
-        reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu', ctx)]]).reply_markup
-      });
-      return;
-    }
+    const monthName = moment().format('MMMM YYYY').toUpperCase();
 
-    const paid = payments.filter(p => p.paid);
-    const unpaid = payments.filter(p => !p.paid);
+    // Barcha o'quvchilarni olish
+    const students = await User.find({ role: 'student' }).lean();
 
-    let message = `*${moment().format('MMMM YYYY')} TO'LOVLARI*\n\n`;
-    message += `✅ To'langan: ${paid.length} ta\n`;
-    message += `❌ To'lanmagan: ${unpaid.length} ta\n\n`;
+    // Joriy oy to'lovlarini olish (populate bilan)
+    const payments = await Payment.find({ month: currentMonth })
+      .populate<{ userId: IUser | null }>('userId')
+      .lean();
 
-    if (unpaid.length > 0) {
-      message += `*To'lanmaganlar:*\n`;
-      unpaid.forEach((p, index) => {
-        const student = (p.userId as any);
-        if (student && student.fullName) {
-          message += `${index + 1}. ${student.fullName} - ${p.amount.toLocaleString()} so'm\n`;
-        } else {
-          message += `${index + 1}. [O'quvchi topilmadi] - ${p.amount.toLocaleString()} so'm\n`;
-        }
-      });
-    }
-
-    if (paid.length > 0) {
-      message += `\n*To'langanlar:*\n`;
-      paid.forEach((p, index) => {
-        const student = (p.userId as any);
-        const date = moment(p.paidAt).format('DD.MM');
-        const method = p.method === 'receipt' ? 'Chek' : 'Naqd';
-        if (student && student.fullName) {
-          message += `${index + 1}. ${student.fullName} - ${p.amount.toLocaleString()} so'm (${date}, ${method})\n`;
-        } else {
-          message += `${index + 1}. [O'quvchi topilmadi] - ${p.amount.toLocaleString()} so'm (${date}, ${method})\n`;
-        }
-      });
-    }
-
-    await ctx.replyWithMarkdownV2(message.replace(/[_*[\]()~>#+=|{}.!-]/g, '\\$&'), {
-      reply_markup: Markup.inlineKeyboard([
-        [backButton('back_to_menu', ctx)]
-      ]).reply_markup
+    // To'lovlar xaritasini yaratamiz (userId bo'yicha)
+    const paymentMap = new Map<string, any>();
+    payments.forEach(p => {
+      if (p.userId?._id) {
+        paymentMap.set(p.userId._id.toString(), p);
+      }
     });
+
+    let paidCount = 0;
+    let unpaidCount = 0;
+    let paidText = '';
+    let unpaidText = '';
+
+    students.forEach((student, index) => {
+      const studentId = student._id.toString();
+      const payment = paymentMap.get(studentId);
+      const name = student.fullName;
+      const amount = student.paymentAmount.toLocaleString();
+
+      if (payment?.paid) {
+        paidCount++;
+        const date = moment(payment.paidAt).format('DD.MM');
+        const method = payment.method === 'receipt' ? 'Chek' : 'Naqd';
+        paidText += `${paidCount}. ${name} — ${amount} so'm (${date}, ${method})\n`;
+      } else {
+        unpaidCount++;
+        unpaidText += `${unpaidCount}. ${name} — ${amount} so'm\n`;
+      }
+    });
+
+    let message = `*${monthName} TO'LOVLARI*\n\n`;
+    message += `To'langan: ${paidCount} ta\n`;
+    message += `To'lanmagan: ${unpaidCount} ta\n\n`;
+
+    if (paidCount > 0) {
+      message += `*To'langanlar:*\n${paidText}\n`;
+    }
+
+    if (unpaidCount > 0) {
+      message += `*To'lanmaganlar:*\n${unpaidText}`;
+    }
+
+    if (paidCount === 0 && unpaidCount === 0) {
+      message += "O'quvchilar topilmadi yoki hech kim to'lov qilmagan.";
+    }
+
+    await ctx.replyWithMarkdownV2(
+      message.replace(/[_*[\]()~>#+=|{}.!-]/g, '\\$&'),
+      {
+        reply_markup: Markup.inlineKeyboard([
+          [backButton('back_to_menu', ctx)]
+        ]).reply_markup
+      }
+    );
+
   } catch (error) {
     console.error('Show payment list error:', error);
-    await ctx.reply("❌ To'lovlar ro'yxatini ko'rsatishda xatolik yuz berdi.");
+    await ctx.reply("To'lovlar ro'yxatini yuklashda xatolik yuz berdi.");
   }
 };
+
 
 // === REYTING ===
 export const showRating = async (ctx: any) => {
