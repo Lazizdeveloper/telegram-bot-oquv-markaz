@@ -2035,3 +2035,196 @@ export {
   handleQuizAnswer,
   stopQuiz,
 } from './quiz';
+
+
+// === O'QUVCHI UCHUN JADVAL KO'RISH ===
+export const viewSchedule = async (ctx: any) => {
+  await safeAnswerCbQuery(ctx);
+
+  try {
+    const schedules = await Schedule.find().sort({ day: 1, time: 1 });
+
+    let message = "*Dars jadvali*\n\n";
+    if (schedules.length === 0) {
+      message += "Hozircha jadval yo‘q.";
+    } else {
+      const daysOrder = ['Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba', 'Yakshanba'];
+      daysOrder.forEach(day => {
+        const daySchedules = schedules.filter((s: any) => s.day === day);
+        if (daySchedules.length > 0) {
+          message += `*${day}*\n`;
+          daySchedules.forEach((s: any) => {
+            message += `└ ${s.time} – ${s.group}\n`;
+          });
+          message += '\n';
+        }
+      });
+    }
+
+    await ctx.replyWithMarkdownV2(escapeMarkdownV2(message.trim()), {
+      reply_markup: Markup.inlineKeyboard([
+        [backButton('back_to_menu', ctx)]
+      ]).reply_markup
+    });
+  } catch (error) {
+    console.error('Jadval ko‘rish xatosi:', error);
+    await ctx.reply("Jadvalni yuklashda xatolik yuz berdi.");
+  }
+};
+
+// === O'QUVCHI UCHUN UYGA VAZIFA TOPSHIRISH ===
+export const submitHomework = async (ctx: any) => {
+  await safeAnswerCbQuery(ctx);
+
+  const today = moment().format('YYYY-MM-DD');
+  const existing = await Homework.findOne({
+    studentId: (await User.findOne({ telegramId: ctx.from.id }))?._id,
+    date: today
+  });
+
+  if (existing?.answerText || existing?.answerPhoto) {
+    return ctx.reply("Siz bugungi vazifani allaqachon topshirgansiz!", {
+      reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu', ctx)]]).reply_markup
+    });
+  }
+
+  ctx.session.homeworkStep = 'waiting_answer';
+  ctx.session.homeworkDate = today;
+
+  await ctx.reply(
+    "*Uyga vazifani topshiring*\n\n" +
+    "Matn yoki rasm yuboring. O‘qituvchi tekshiradi va baho qo‘yadi.",
+    {
+      parse_mode: 'Markdown',
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback("Bekor qilish", "back_to_menu")]
+      ]).reply_markup
+    }
+  );
+};
+
+// === VAZIFANI TEKSHIRISH ===
+export const reviewHomework = async (ctx: any) => {
+  await safeAnswerCbQuery(ctx);
+
+  try {
+    if (!isTeacher(ctx)) return ctx.reply(t('teacher_only', ctx));
+
+    const homeworkId = ctx.match[1];
+    const homework = await Homework.findById(homeworkId)
+      .populate<{ studentId: IUser }>('studentId');
+
+    if (!homework) return ctx.reply("Vazifa topilmadi.");
+
+    const student = homework.studentId;
+    const date = moment(homework.date).format('DD.MM.YYYY');
+
+    let message = `*Vazifani tekshirish*\n\n`;
+    message += `O'quvchi: *${student.fullName}*\n`;
+    message += `Sana: ${date}\n\n`;
+
+    if (homework.answerPhoto) {
+      await ctx.replyWithPhoto(homework.answerPhoto, {
+        caption: escapeMarkdownV2(message + (homework.answerText ? `${homework.answerText}` : "")),
+        parse_mode: 'MarkdownV2',
+        reply_markup: Markup.inlineKeyboard([
+          [
+            Markup.button.callback("5", `score_${homeworkId}_5`),
+            Markup.button.callback("4", `score_${homeworkId}_4`),
+            Markup.button.callback("3", `score_${homeworkId}_3`)
+          ],
+          [
+            Markup.button.callback("2", `score_${homeworkId}_2`),
+            Markup.button.callback("1", `score_${homeworkId}_1`),
+            Markup.button.callback("0", `score_${homeworkId}_0`)
+          ],
+          [Markup.button.callback("Orqaga", "check_homework")]
+        ]).reply_markup
+      });
+    } else {
+      message += homework.answerText || "Matn yo‘q";
+      await ctx.replyWithMarkdownV2(escapeMarkdownV2(message), {
+        reply_markup: Markup.inlineKeyboard([
+          [
+            Markup.button.callback("5", `score_${homeworkId}_5`),
+            Markup.button.callback("4", `score_${homeworkId}_4`),
+            Markup.button.callback("3", `score_${homeworkId}_3`)
+          ],
+          [
+            Markup.button.callback("2", `score_${homeworkId}_2`),
+            Markup.button.callback("1", `score_${homeworkId}_1`),
+            Markup.button.callback("0", `score_${homeworkId}_0`)
+          ],
+          [Markup.button.callback("Orqaga", "check_homework")]
+        ]).reply_markup
+      });
+    }
+  } catch (error) {
+    console.error('Vazifa tekshirish xatosi:', error);
+    await ctx.reply("Xatolik yuz berdi.");
+  }
+};
+
+// === BAHO QO‘YISH — TO‘LIQ TUZATILGAN VERSIYA ===
+export const scoreHomework = async (ctx: any) => {
+  await safeAnswerCbQuery(ctx);
+  try {
+    if (!isTeacher(ctx)) return;
+
+    const [_, homeworkId, scoreStr] = ctx.match;
+    const score = parseInt(scoreStr);
+
+    const homework = await Homework.findById(homeworkId)
+      .populate<{ studentId: IUser }>('studentId');
+
+    if (!homework) {
+      await ctx.reply("Vazifa topilmadi.");
+      return;
+    }
+
+    homework.score = score;
+    homework.checked = true;
+    homework.checkedAt = new Date();
+    await homework.save();
+
+    const student = homework.studentId;
+    const date = moment(homework.date).format('DD.MM.YYYY');
+
+    // O‘qituvchiga tasdiq xabari
+    const confirmedText = `*Baholandi!*\n\nO'quvchi: *${student.fullName}*\nSana: ${date}\nBaho: *${score}/5*`;
+
+    if (ctx.callbackQuery.message?.photo) {
+      await ctx.editMessageCaption(escapeMarkdownV2(confirmedText), {
+        parse_mode: 'MarkdownV2',
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback("Orqaga", "check_homework")]
+        ]).reply_markup
+      });
+    } else {
+      await ctx.editMessageText(escapeMarkdownV2(confirmedText), {
+        parse_mode: 'MarkdownV2',
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback("Orqaga", "check_homework")]
+        ]).reply_markup
+      });
+    }
+
+    // O‘QUVCHIGA XABAR YUBORISH — BU YERDA bot YUQ → ctx.telegram ISHLATILDI
+    try {
+      await ctx.telegram.sendMessage(
+        student.telegramId,
+        `Sizning vazifangiz tekshirildi!\n\n` +
+        `Sana: ${date}\n` +
+        `Baho: *${score}/5*` +
+        (score >= 4 ? " Ajoyib ish!" : "\nKeyingi safar yaxshiroq harakat qiling!"),
+        { parse_mode: 'Markdown' }
+      );
+    } catch (e) {
+      console.log("O‘quvchiga xabar yuborilmadi:", student.fullName);
+    }
+
+  } catch (error) {
+    console.error('Baho qo‘yish xatosi:', error);
+    await ctx.reply("Xatolik yuz berdi.");
+  }
+};

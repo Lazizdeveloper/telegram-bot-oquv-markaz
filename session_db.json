@@ -20,7 +20,9 @@
         "edit": true,
         "language": "uz",
         "fullName": "Saidkarim Niyazov",
-        "phone": "+998333672601"
+        "phone": "+998333672601",
+        "homeworkStep": "waiting_answer",
+        "homeworkDate": "2025-11-19"
       }
     },
     {
@@ -28,7 +30,7 @@
       "data": {
         "edit": true,
         "step": "edit_phone",
-        "language": "en",
+        "language": "uz",
         "answering_homework": true
       }
     },
