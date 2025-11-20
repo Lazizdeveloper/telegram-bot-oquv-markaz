@@ -1,63 +1,16 @@
 {
   "sessions": [
     {
-      "id": "6186454238:6186454238",
-      "data": {
-        "phone": "+998949395123",
-        "day": "Dushanba",
-        "fullName": "Laziz Shakarov",
-        "time": "09:00-10:30",
-        "current_homework_id": "6918bbd0b940b98017de9f10",
-        "language": "uz",
-        "answering_homework": true,
-        "studentToRemove": "691c48524cc4383918770f69",
-        "step": "send_homework_content"
-      }
-    },
-    {
-      "id": "8230280470:8230280470",
-      "data": {
-        "edit": true,
-        "language": "uz",
-        "fullName": "Saidkarim Niyazov",
-        "phone": "+998333672601",
-        "homeworkStep": "waiting_answer",
-        "homeworkDate": "2025-11-19"
-      }
-    },
-    {
       "id": "7357754115:7357754115",
       "data": {
-        "edit": true,
-        "step": "edit_phone",
-        "language": "uz",
-        "answering_homework": true
+        "language": "uz"
       }
     },
     {
-      "id": "7011669085:7011669085",
-      "data": {
-        "fullName": "Sabina",
-        "phone": "+998959826462",
-        "answering_homework": true
-      }
-    },
-    {
-      "id": "5061144163:5061144163",
+      "id": "6186454238:6186454238",
       "data": {
         "language": "uz",
-        "answering_homework": true,
-        "fullName": "Ilhom Toshqulov",
-        "phone": "+998771232115"
-      }
-    },
-    {
-      "id": "457242809:457242809",
-      "data": {
-        "fullName": "Anvar",
-        "phone": "+998932282703",
-        "day": "Chorshanba",
-        "step": "sched_time"
+        "studentToRemove": "691e8c4aa2742e06ddd00148"
       }
     }
   ]

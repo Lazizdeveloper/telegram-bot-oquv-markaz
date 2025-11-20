@@ -26,7 +26,7 @@ const userSchema = new mongoose.Schema({
   studentPhone: { type: String, default: '' },
   address: { type: String, required: true },
   language: { type: String, default: 'uz' },
-  role: { type: String, enum: ['student', 'teacher'], default: 'student' },
+  role: { type: String, enum: ['student', 'teacher','admin'], default: 'student' },
   paymentDay: { type: Number, default: 10 },
   paymentAmount: { type: Number, default: 500000 },
   createdAt: { type: Date, default: Date.now }

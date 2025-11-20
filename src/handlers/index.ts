@@ -26,7 +26,7 @@ export const startCommand = async (ctx: any) => {
 
     await ctx.replyWithMarkdown(
       `*O'quv markaziga xush kelibsiz!*\n\n` +
-      `Iltimos, o'quvchining ism va familiyasini kiriting:`
+      `Iltimos, ism va familiyangizni kiriting:`
     );
   } catch (error) {
     console.error('Start command error:', error);

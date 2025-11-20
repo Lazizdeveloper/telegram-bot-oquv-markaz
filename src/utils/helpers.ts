@@ -3,8 +3,8 @@ import { User } from '../config/database';
 import moment from 'moment';
 
 export const isTeacher = (ctx: any): boolean => {
-  const teacherId = process.env.TEACHER_ID;
-  return ctx.from.id.toString() === teacherId;
+  const teacherIds = process.env.TEACHER_ID?.split(',').map(id => id.trim()) || [];
+  return teacherIds.includes(ctx.from.id.toString());
 };
 
 export const isRegistered = async (ctx: any): Promise<boolean> => {
@@ -225,12 +225,12 @@ export const setMomentLocale = (ctx: any): void => {
 };
 
 export const TEACHER_ID = (): string => {
-  const teacherId = process.env.TEACHER_ID;
-  if (!teacherId) {
+  const ids = process.env.TEACHER_ID?.split(',').map(id => id.trim());
+  if (!ids || ids.length === 0) {
     console.error('TEACHER_ID muhit o\'zgaruvchisi belgilanmagan!');
     return '0';
   }
-  return teacherId;
+  return ids[0]; // Faqat birinchi ID
 };
 
 export const PAYMENT_CARD_NUMBER = process.env.PAYMENT_CARD_NUMBER || '8600 1234 5678 9101';
