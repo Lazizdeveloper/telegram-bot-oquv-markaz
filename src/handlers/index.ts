@@ -481,13 +481,15 @@ export const addSchedule = async (ctx: any) => {
 // === VAZIFA YUBORISH ===
 export const manualHomework = async (ctx: any) => {
   await safeAnswerCbQuery(ctx);
-  
+ 
   try {
     if (!isTeacher(ctx)) {
       await ctx.reply(t('teacher_only', ctx));
       return;
     }
-    ctx.session.step = 'send_homework_content';
+    // XATO: ctx.session.step = 'send_homework_content';
+    // TO'G'RI:
+    ctx.session.homeworkStep = 'sending_to_all'; // yangi kalit!
     await ctx.reply("O'quvchilarga uyga vazifa yuboring (matn yoki rasm):");
   } catch (error) {
     console.error('Manual homework error:', error);

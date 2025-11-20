@@ -52,28 +52,24 @@ import {
   handleRegistration,
   handlePhoneShare,
 
-  reviewHomework,        // YANGI QO‘ShILDI
+  reviewHomework,
   scoreHomework,
 
-  // PROFIL TAHRIRLASH
   editProfile,
   handleProfileEdit,
   cancelEdit,
 
-  // O'QUVCHINI CHIQARISH
   removeStudentStart,
   confirmRemoveStudent,
   finalRemoveStudent,
   cancelRemoveStudent,
 
-  // JADVAL BOSHQARUV
   manageSchedule,
   addSchedule,
   editScheduleStart,
   deleteScheduleStart,
   handleScheduleText,
 
-  // YANGI QO‘ShILGANLAR (o‘quvchi uchun)
   viewSchedule,
   submitHomework
 } from './handlers';
@@ -159,13 +155,21 @@ bot.on('text', async (ctx: any) => {
     }
 
     // 4. O'qituvchi vazifa yuborishi
-    if (ctx.session?.step === 'send_homework_content') {
+    // 4. O'qituvchi hammaga vazifa yuborishi
+    if (ctx.session?.homeworkStep === 'sending_to_all') {
       const students = await User.find({ role: 'student' });
+      const messageText = ctx.message.text;
+
       for (const s of students) {
-        await bot.telegram.sendMessage(s.telegramId, `Yangi uyga vazifa:\n\n${ctx.message.text}`);
+        try {
+          await bot.telegram.sendMessage(s.telegramId, `Yangi uyga vazifa:\n\n${messageText}`);
+        } catch (e) {
+          console.log(`Xabar yuborilmadi: ${s.fullName}`);
+        }
       }
-      delete ctx.session.step;
-      await ctx.reply("Vazifa hammaga yuborildi!", {
+
+      delete ctx.session.homeworkStep;
+      await ctx.reply(`Vazifa ${students.length} ta o'quvchiga yuborildi!`, {
         reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu', ctx)]]).reply_markup
       });
       return;
@@ -192,7 +196,6 @@ bot.on('text', async (ctx: any) => {
         reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu', ctx)]]).reply_markup
       });
 
-      // O‘qituvchiga xabar
       await bot.telegram.sendMessage(
         TEACHER_ID(),
         `Yangi vazifa topshirildi!\n\n` +
@@ -211,9 +214,8 @@ bot.on('text', async (ctx: any) => {
 
 // ==================== PHOTO HANDLER (CHEK + VAZIFA) ====================
 bot.on('photo', async (ctx: any) => {
-  // 1. Chek yuborish (to'lov)
+  // 1. Chek yuborish
   if (ctx.session?.waitingForReceipt) {
-    // ... (sizning eski kod shu yerda qolaveradi)
     try {
       const fileId = ctx.message.photo.at(-1)!.file_id;
       const user = await User.findOne({ telegramId: ctx.from.id });
@@ -246,7 +248,28 @@ bot.on('photo', async (ctx: any) => {
     return;
   }
 
-  // 2. O‘QUVCHI RASMLI VAZIFA TOPSHIRISHI
+  // 3. O'qituvchi hammaga rasmli vazifa yuborishi
+  if (ctx.session?.homeworkStep === 'sending_to_all') {
+    const fileId = ctx.message.photo.at(-1)!.file_id;
+    const caption = ctx.message.caption || "Uyga vazifa";
+
+    const students = await User.find({ role: 'student' });
+    for (const s of students) {
+      try {
+        await bot.telegram.sendPhoto(s.telegramId, fileId, { caption: `Yangi uyga vazifa:\n\n${caption}` });
+      } catch (e) {
+        console.log(`Rasm yuborilmadi: ${s.fullName}`);
+      }
+    }
+
+    delete ctx.session.homeworkStep;
+    await ctx.reply(`Rasmli vazifa ${students.length} ta o'quvchiga yuborildi!`, {
+      reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu', ctx)]]).reply_markup
+    });
+    return;
+  }
+
+  // 2. Rasmli vazifa topshirish
   if (ctx.session?.homeworkStep === 'waiting_answer') {
     try {
       const user = await User.findOne({ telegramId: ctx.from.id });
@@ -275,7 +298,6 @@ bot.on('photo', async (ctx: any) => {
         reply_markup: Markup.inlineKeyboard([[backButton('back_to_menu', ctx)]]).reply_markup
       });
 
-      // O‘qituvchiga rasm yuborish
       await bot.telegram.sendPhoto(TEACHER_ID(), fileId, {
         caption: 
           `Yangi vazifa!\n\n` +
@@ -305,9 +327,13 @@ bot.action(/hw_page_(.+)/, safeAction(showHomeworkPageHandler));
 bot.action('payment_history', safeAction(showPaymentHistory));
 bot.action('student_stats', safeAction(showStudentStats));
 
-// YANGI – O‘QUVCHI UCHUN
 bot.action('view_schedule', safeAction(viewSchedule));
 bot.action('submit_homework', safeAction(submitHomework));
+
+bot.action('manage_schedule', safeAction(manageSchedule));
+bot.action('add_schedule', safeAction(addSchedule));
+bot.action('edit_schedule', safeAction(editScheduleStart));
+bot.action('delete_schedule', safeAction(deleteScheduleStart));
 
 bot.action('send_receipt', safeAction(sendReceipt));
 bot.action('offline_payment', safeAction(offlinePayment));
@@ -328,7 +354,6 @@ bot.action(/^remove_student_([0-9a-fA-F]{24})$/, safeAction(confirmRemoveStudent
 bot.action(/^final_remove_([0-9a-fA-F]{24})$/, safeAction(finalRemoveStudent));
 bot.action('remove_student_cancel', safeAction(cancelRemoveStudent));
 
-// Vazifani tekshirish uchun
 bot.action(/review_hw_(.+)/, safeAction(reviewHomework));
 bot.action(/score_(.+)_(\d+)/, safeAction(scoreHomework));
 
@@ -340,20 +365,57 @@ bot.action(/homework_history_(.+)/, safeAction(showHomeworkHistory));
 bot.action('change_language', safeAction(changeLanguage));
 bot.action(/set_language_(.+)/, safeAction(setLanguage));
 
-// Karra jadvali quiz
 bot.action('multiplication_quiz', safeAction(startMultiplicationQuiz));
 bot.action(/^quiz_ans_(\d+)$/, safeAction(handleQuizAnswer));
 bot.action('quiz_stop', safeAction(stopQuiz));
 
-// Jadval boshqaruv
-bot.action('manage_schedule', safeAction(manageSchedule));
-bot.action('add_schedule', safeAction(addSchedule));
-bot.action('edit_schedule', safeAction(editScheduleStart));
-bot.action('delete_schedule', safeAction(deleteScheduleStart));
+// ==================== JADVAL UCHUN YANGI ACTIONLAR (TOZA) ====================
+bot.action(/^sched_day_(.+)$/, safeAction(async (ctx: any) => {
+  await safeAnswerCbQuery(ctx);
+  if (!isTeacher(ctx)) return ctx.reply(t('teacher_only', ctx));
 
-bot.action(/^sched_day_(.+)$/, safeAction(async (ctx: any) => { /* ... */ }));
-bot.action(/^edit_sched_(.+)$/, safeAction(async (ctx: any) => { /* ... */ }));
-bot.action(/^confirm_delete_(.+)$/, safeAction(async (ctx: any) => { /* ... */ }));
+  const day = decodeURIComponent(ctx.match[1]);
+  ctx.session.newSchedule = { day };
+  ctx.session.scheduleStep = 'input_time';
+
+  await ctx.replyWithMarkdown(
+    `*${day}* uchun dars vaqtini kiriting:\n\nMasalan: \`18:30\``,
+    {
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback("Orqaga", "add_schedule")]
+      ]).reply_markup
+    }
+  );
+}));
+
+bot.action(/^edit_sched_(.+)$/, safeAction(async (ctx: any) => {
+  await safeAnswerCbQuery(ctx);
+  if (!isTeacher(ctx)) return;
+
+  const scheduleId = ctx.match[1];
+  const schedule = await Schedule.findById(scheduleId);
+  if (!schedule) return ctx.reply("Dars topilmadi.");
+
+  ctx.session.editingSchedule = scheduleId;
+  ctx.session.scheduleStep = 'edit_time';
+
+  await ctx.replyWithMarkdown(
+    `Tanlangan dars:\n*${schedule.day} | ${schedule.time} | ${schedule.group}*\n\nYangi vaqtni kiriting (masalan: 17:00):`
+  );
+}));
+
+bot.action(/^confirm_delete_(.+)$/, safeAction(async (ctx: any) => {
+  await safeAnswerCbQuery(ctx);
+  if (!isTeacher(ctx)) return;
+
+  const scheduleId = ctx.match[1];
+  await Schedule.findByIdAndDelete(scheduleId);
+
+  await ctx.replyWithMarkdown(
+    "Dars muvaffaqiyatli o‘chirildi!",
+    { reply_markup: Markup.inlineKeyboard([[Markup.button.callback("Jadval", "manage_schedule")]]) }
+  );
+}));
 
 // ==================== SERVER ====================
 const port = Number(process.env.PORT) || 10000;
